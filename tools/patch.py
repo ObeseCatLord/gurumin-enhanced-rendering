@@ -161,10 +161,10 @@ def main(argv=None):
         elif os.name != 'nt':
             print('Steam launch settings left unchanged. Configure this launch option before playing:')
             print('WINEDLLOVERRIDES="d3d9=n,b" %command%')
-        print('Installation complete. Start Gurumin and select Graphics / Audio to configure the mod.')
+        print('Installation complete. Start Gurumin through Steam and select Graphics / Audio to configure the mod.')
         return 0
     except KeyboardInterrupt:
-        print('Cancelled. Completed file changes were rolled back; backups remain available.', file=sys.stderr)
+        print('Cancelled. Run status to inspect the installation; backups remain available.', file=sys.stderr)
         return 130
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, EOFError, SystemExit) as exc:
         print('Patch stopped:', exc, file=sys.stderr)

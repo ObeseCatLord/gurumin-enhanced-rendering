@@ -191,3 +191,10 @@ The installers do not launch the game.
 
 The Python regression suite passes 35 tests with owned stock fixtures. Release
 packaging excludes game executables, assets, private traces and operational logs.
+
+Astra's focused recheck found no remaining release blockers in this scope. Its
+non-blocking cancellation-message correction was also adopted: a cancellation
+after the core install has committed now asks the user to inspect status rather
+than claiming every file change was rolled back. Packaged Linux and Windows
+(Wine) end-to-end detection/install/update/restore checks passed, including
+Unicode paths. Four portable C++ regression fixtures also pass.
