@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.log
+*.o
+*.exe
+*.dll
+/dist/
+/release/
+/build/
+/downloads/
+*.zip
+*.tar.gz
+*.ppm
+*.png
+*.gpr
+*.rep/
+.env*
