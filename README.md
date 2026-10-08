@@ -7,7 +7,7 @@ A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
 
 [PSP Outfits](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/Gurumin%20PSP%20Outfits.zip)
 
-I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which include script fixes and other enhancements
+I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which include script fixes, Japanese voice acting, and other enhancements
 
 ## Features
 
