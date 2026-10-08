@@ -2,10 +2,8 @@
 
 [![Gurumin Enhanced Rendering gameplay preview: ultrawide rendering, proportional HUD and free camera](docs/media/preview.gif)](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/docs/media/showcase.mp4)
 
-[Watch the full 60 FPS gameplay video](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/docs/media/showcase.mp4).
-
 A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
-1.4
+1.4. I don't know if this works on the GOG version.
 
 [Download](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/releases/latest)
 
