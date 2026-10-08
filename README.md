@@ -100,7 +100,8 @@ review dispositions and `MODLOG.md` for reverse-engineering and validation notes
 
 ## Credits and license
 
-Created by **ObeseCatLord**,
+Created by **ObeseCatLord**.
+Implementation and reverse-engineering assistance: OpenAI Codex; design reviews: Astra.
 Original mod code is MIT licensed. MinHook and NVIDIA FXAA retain their respective
 licenses; the bundled Windows Python runtime retains the PSF license. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No generated art/audio is used.

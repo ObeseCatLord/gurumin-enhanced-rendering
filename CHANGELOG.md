@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-10-08
 
 - Extend the native Filtering dropdown through 16× anisotropy, retaining its
   original configuration format and respecting GPU limits and nearest sampling.
