@@ -62,9 +62,13 @@ static PresentFn present;
 static TransformFn setTransform;
 static DrawUPFn drawUP;
 static ShaderConstFn setConst;
+using SamplerFn = HRESULT(WINAPI *)(IDirect3DDevice9 *, DWORD,
+                                    D3DSAMPLERSTATETYPE, DWORD);
+static SamplerFn setSampler;
+static DWORD maxAnisotropy = 1;
+static bool supported;
 static unsigned frames, draws, transforms, consts;
 static uintptr_t gameBase;
-static bool supported;
 #include "crash_trace.hpp"
 static unsigned outputWidth, outputHeight;
 static void effectiveResolution(gurumin::Resolution);
@@ -95,6 +99,35 @@ static double renderTime() {
 }
 template <class T> static T &game(uintptr_t rva) {
   return *reinterpret_cast<T *>(gameBase + rva);
+}
+static HRESULT WINAPI samplerHook(IDirect3DDevice9 *d, DWORD stage,
+                                  D3DSAMPLERSTATETYPE state, DWORD value) {
+  DWORD requested = value;
+  if (supported && state == D3DSAMP_MAXANISOTROPY) {
+    // The added 5x..16x labels need index - 1, while the native sampler
+    // path subtracts two. Adapt that native boundary for the new entries;
+    // existing choices, point transactions and effects keep their values.
+    int filter = game<int>(0x1de4820);
+    if (stage == 0 && filter >= 6 && filter <= 17 &&
+        value == DWORD(filter - 2) &&
+        uintptr_t(__builtin_return_address(0)) - gameBase == 0x3a4f45)
+      requested = value + 1;
+    if (requested > 4 || requested != value)
+      value = std::min(requested, maxAnisotropy);
+  }
+  HRESULT result = setSampler(d, stage, state, value);
+  if (supported && state == D3DSAMP_MAXANISOTROPY && requested > 4) {
+    static DWORD lastRequest = 0, lastEffective = 0;
+    if (requested != lastRequest || value != lastEffective) {
+      DWORD actual = 0;
+      d->GetSamplerState(stage, state, &actual);
+      log("Anisotropic filtering requested=%lux effective=%lux actual=%lux hr=%08lx",
+          (unsigned long)requested, (unsigned long)value, (unsigned long)actual,
+          (unsigned long)result);
+      lastRequest = requested; lastEffective = value;
+    }
+  }
+  return result;
 }
 static int hudDepth, worldDepth, cursorDepth;
 static int projectedGeometryDepth;
@@ -1772,6 +1805,10 @@ static HRESULT WINAPI deviceHook(IDirect3D9 *d, UINT a, D3DDEVTYPE type, HWND w,
   }
   log("CreateDevice HRESULT=%08lx", (unsigned long)h);
   if (SUCCEEDED(h)) {
+    D3DCAPS9 caps{};
+    maxAnisotropy = SUCCEEDED((*out)->GetDeviceCaps(&caps))
+        ? std::max(1u, std::min(16u, unsigned(caps.MaxAnisotropy))) : 1u;
+    hook(*out, 69, samplerHook, setSampler);
     hook(*out, 16, resetHook, resetDevice);
     hook(*out, 17, presentHook, present);
     hook(*out, 44, transformHook, setTransform);

@@ -562,6 +562,34 @@ static void customizeLauncher(HWND window) {
     launcherWindow=nullptr;
     rollback(); return;
   }
+  // Native FILTER stores the combo index. The sampler adapter corrects
+  // its subtraction for the new entries to match their displayed anisotropy.
+  // Keep the original point/bilinear/1x..4x entries and native persistence.
+  HWND filtering = GetDlgItem(graphicsPage, 1062);
+  if (filtering && SendMessageW(filtering, CB_GETCOUNT, 0, 0) == 6) {
+    for (int level = 5; level <= 16; ++level) {
+      wchar_t label[32];
+      swprintf(label, sizeof(label) / sizeof(*label), L"anisotropic x%d", level);
+      if (SendMessageW(filtering, CB_ADDSTRING, 0,
+                       reinterpret_cast<LPARAM>(label)) != level + 1) {
+        // Remove only the appended entries if insertion failed.
+        while (SendMessageW(filtering, CB_GETCOUNT, 0, 0) > 6)
+          SendMessageW(filtering, CB_DELETESTRING, 6, 0);
+        break;
+      }
+    }
+    int selectedFilter = game<int>(0x121357c);
+    if (selectedFilter >= 6 && selectedFilter <= 17 &&
+        SendMessageW(filtering, CB_GETCOUNT, 0, 0) == 18)
+      SendMessageW(filtering, CB_SETCURSEL, selectedFilter, 0);
+    RECT r{}, drop{};
+    GetWindowRect(filtering, &r);
+    SendMessageW(filtering, CB_GETDROPPEDCONTROLRECT, 0,
+                 reinterpret_cast<LPARAM>(&drop));
+    SetWindowPos(filtering, nullptr, 0, 0, r.right - r.left,
+        std::max(int(drop.bottom - drop.top), int(dropdown.bottom)),
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  }
   log("Launcher expanded resolution choices=%u selected=%dx%d",
       unsigned(launcherModes.size()), current.width, current.height);
 }

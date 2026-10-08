@@ -382,3 +382,28 @@ capture path. Ten actual2048 targets retained; steady presentation174.62FPS with
 fine stripes, but full motion/cutscene/transition acceptance awaits user feedback.
 No new fault trace appended. Diagnostic logging disabled for future launches;
 current verification process remains running for the user's visual checks.
+
+
+## Higher anisotropic filtering (2026-10-08)
+
+Extended the original texture-filtering combo1062 from point/bilinear/1x..4x
+to18 entries, including every anisotropic level5x..16x. Native FILTER remains
+the zero-based selection; no additional setting or persistence path is added.
+The native sampler computes FILTER-2, whereas the additional labels need
+FILTER-1. The proxy corrects only new selections6..17 at the verified native
+SetSamplerState return RVA3a4f45, stage0/MAXANISOTROPY, matching the expected
+raw operand. Existing choices and point/effect sampler transactions retain
+their values. Higher requests clamp to the device's reported maximum16.
+
+Verified with the isolated game launcher: selected16x, accepted Close, native
+config FILTER17 persisted, and a fresh launcher showed16x selected. Native
+game startup reported requested16/effective16/device-observed16 and S_OK.
+Real D3D9 checks passed nearest-sampling restoration at4x,8x,16x, along with
+existing FXAA/state restoration checks. Settings tests and production build
+passed. Private screenshots and decompiled evidence remain outside the repo.
+
+The updated DLL was installed through the existing verified recovery journal.
+Sixteen owned-binary installer checks passed; both executables, live preferences,
+outfit DLL/map, and current saves retained their hashes. Steam options were not
+changed. Higher AF requires native world filtering; existing nearest preferences
+remain intact.

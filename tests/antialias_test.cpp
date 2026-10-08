@@ -125,15 +125,19 @@ void testPointSampler(IDirect3DDevice9 *device) {
   require(device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR));
   require(device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR));
   require(device->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR));
-  require(device->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, 4));
-  DWORD nativeAniso[4]{};
-  readPointSamplerStates(device, nativeAniso); // Compare device-observed values, not requests.
-  {
-    PointSampler scope(device, true);
-    const DWORD point[4] = {D3DTEXF_POINT, D3DTEXF_POINT, D3DTEXF_POINT, 1};
-    requirePointSamplerStates(device, point);
+  // Nearest overrides must restore higher AF levels as well as the old 4x.
+  for (DWORD level : {4u, 8u, 16u}) {
+    require(device->SetSamplerState(0, D3DSAMP_MAXANISOTROPY, level));
+    DWORD nativeAniso[4]{};
+    readPointSamplerStates(device, nativeAniso); // Compare device-observed values, not requests.
+    {
+      PointSampler scope(device, true);
+      const DWORD point[4] = {D3DTEXF_POINT, D3DTEXF_POINT, D3DTEXF_POINT, 1};
+      requirePointSamplerStates(device, point);
+    }
+    requirePointSamplerStates(device, nativeAniso);
+    assert(nativeAniso[3] == level);
   }
-  requirePointSamplerStates(device, nativeAniso);
 
   require(device->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE));
   DWORD nativeNoMip[4]{};

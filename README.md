@@ -45,6 +45,11 @@ settings window and choose your resolution, cap and camera settings. **More
 settings** provides shadow resolution, AA and texture filtering. Choose **Start
 Game** or **Close** to save; Cancel/Escape discard changes. Restart to apply.
 
+The original **Filtering** dropdown includes anisotropic levels through **16×**.
+Requests are limited to the GPU's supported maximum. Set **World textures** to
+**Native filtering** to use it; **Nearest (pixelated)** overrides filtering for
+the selected texture category.
+
 
 ## Compatibility and limitations
 

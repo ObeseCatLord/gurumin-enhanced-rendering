@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Extend the native Filtering dropdown through 16× anisotropy, retaining its
+  original configuration format and respecting GPU limits and nearest sampling.
+
 ## 1.0.2 — 2026-10-07
 
 - Fix Linux installation refusing a closed Steam client because overlay or
