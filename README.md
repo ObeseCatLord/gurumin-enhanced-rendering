@@ -4,7 +4,8 @@ A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
 1.4
 
 [Download](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/releases/latest)
-[PSP Outfits}(https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/Gurumin%20PSP%20Outfits.zip)
+
+[PSP Outfits](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/Gurumin%20PSP%20Outfits.zip)
 
 I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which include script fixes and other enhancements
 
