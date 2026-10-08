@@ -19,6 +19,7 @@ I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which 
 - High framerate support, plus native VSync
 - Right stick free camera as an option. The game isn't made with it in mind, can look weird in town
 - Higher Resolution Shadows
+- FXAA
 
 ## Install — copy into the game folder
 
