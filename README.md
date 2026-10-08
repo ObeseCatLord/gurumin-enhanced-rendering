@@ -3,7 +3,7 @@
 A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
 1.4 (build 603361, app 322290). Supports Windows and Linux through Proton.
 
-[Download v1.0](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/releases/tag/v1.0)
+[Download](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/releases/latest)
 — **one ZIP for both platforms**. No original game executable or asset is included.
 
 ## Features
@@ -24,56 +24,42 @@ A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
 preferences are preserved on update. Interpolation adds roughly one simulation
 tick of visual latency; it does not speed up gameplay.
 
-## Install
+## Install — copy into the game folder
 
-Close Gurumin and extract the **entire ZIP** to a writable folder.
+Close Gurumin. Extract the ZIP, then copy the **contents** of its single
+`Gurumin-Enhanced-Rendering-1.0.1` folder into the game folder beside `game.exe`.
+The top-level `d3d9.dll` is the mod. **No installer or executable patch is required.**
+Start the game normally through Steam. The mod uses your desktop resolution on
+first launch; select another resolution in the game's Graphics / Audio settings.
+Preferences are saved by the launcher, so the ZIP does not overwrite an existing INI.
 
-### Windows
-
-Run **GuruminEnhancedRendering.exe**. It detects Steam and its library folders,
-then patches an installed copy. If there are several copies, select one.
-
-If your installation isn't detected, drag its game folder, `game.exe`, or
-`gurumin.exe` onto **GuruminEnhancedRendering.exe**. You can also paste that path
-into the patch's prompt. The ZIP includes its own Python runtime; no separate
-Python installation is needed. Windows 10/11 x64 is the target installer platform.
-
-### Linux / Steam Deck
-
-Requires Python 3.9 or newer (no pip packages). Close **Steam** as well as Gurumin
-before installing so Steam cannot overwrite the updated launch settings.
-
-Run **GuruminEnhancedRendering.sh** in a terminal, or choose your file manager's
-**Run in Terminal** action. If necessary, mark it executable first:
-
-```sh
-chmod +x GuruminEnhancedRendering.sh
-./GuruminEnhancedRendering.sh
-```
-
-The patch detects native and Flatpak Steam installations and external libraries.
-If no copy is found, drag the game folder or executable into the patch's path
-prompt. File-manager drag/drop onto the script also works where supported:
-
-```sh
-./GuruminEnhancedRendering.sh '/path/to/Gurumin A Monstrous Adventure'
-```
-
-The installer adds the per-game D3D9 loading setting to the selected Steam
-account's launch options, while retaining supported existing options and other
-DLL overrides. It saves the original options for uninstall. Custom launch syntax
-that cannot be safely merged is rejected before game files are changed.
-
-For an advanced manual setup, the required Steam launch option is:
+On Linux/Steam Deck, set this per-game Steam launch option once:
 
 ```text
 WINEDLLOVERRIDES="d3d9=n,b" %command%
 ```
 
-Portable Steam roots can be specified with `--steam-root PATH` (repeatable).
-Use `--steam-user ID` when the active Steam account cannot be determined.
-`--list` only lists copies. `--game PATH` selects a particular installation.
-The shell's `--no-terminal` flag runs directly without opening a desktop terminal.
+The optional Linux installer can do this automatically. Close Steam while it
+updates that setting. If you already use other launch options, the installer
+preserves supported wrappers, arguments and other DLL overrides.
+
+### Optional installers
+
+The **Optional installers** subfolder contains the Windows `.exe` and Linux `.sh`.
+Use them if you prefer automatic Steam-library detection or drag/drop installation.
+They only install/configure the mod; they do not launch the game.
+
+- Windows: run `GuruminEnhancedRendering.exe`, or drop the game folder/executable on it.
+  Its Python runtime is included; Windows 10/11 x64 is the target installer platform.
+- Linux: run `GuruminEnhancedRendering.sh` in a terminal (Python 3.9+, no pip packages),
+  or paste/drop the game folder/executable into its path prompt.
+  It detects native/Flatpak Steam libraries and sets the required launch option.
+
+The installers can be run before or after copying this release's DLL. They
+preserve preferences and create verified backups. An unknown existing D3D9
+wrapper is refused. `--steam-root PATH`, `--steam-user ID`, `--game PATH` and
+`--list` are available for advanced selection. Linux `--no-terminal` avoids
+opening an additional desktop terminal.
 
 ### Configure the game
 
@@ -86,26 +72,21 @@ For DualSense or Steam Controller through Steam Input, configure the right stick
 or pad as a **right joystick** rather than mouse/keyboard input. Enable Free
 camera in the settings to use it. Movement and button bindings remain native.
 
-The first installation uses your detected primary desktop resolution, or
+The optional installer uses your detected primary desktop resolution, or
 1920×1080 if detection is unavailable. An explicit `--width W --height H` overrides
 that choice. Updates keep the prior installed resolution and edited INI.
 
 ## Uninstall and troubleshooting
 
-Close the game (and Steam on Linux), then use the same patch:
+For a manual copy installation, close the game and remove `d3d9.dll` and
+`GuruminModern-FXAA-LICENSE.txt`. Keep or remove `GuruminModern.ini` as preferred.
+On Linux, remove the `d3d9=n,b` override from Steam launch options while retaining
+any unrelated overrides and arguments.
 
-```text
-GuruminEnhancedRendering.exe --action restore
-```
-
-```sh
-./GuruminEnhancedRendering.sh --action restore
-```
-
-Add `--game PATH` if needed. Restore uses verified originals under
-`GuruminModern-backup`, restores installer-owned Steam options, and keeps later
-user edits. Backups remain available; saves are never changed. `--action status`
-reports the installed files and their hashes.
+If you used an optional installer, close the game (and Steam on Linux), then run
+it with `--action restore`. It restores verified originals and its Steam options,
+retains later user edits, and leaves backups under `GuruminModern-backup`.
+`--action status` reports installed files and hashes. Saves are never changed.
 
 Only the supported Steam executable is accepted, verified by full SHA-256.
 Unknown executable modifications or another `d3d9.dll` are refused. Resolve an

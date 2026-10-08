@@ -135,7 +135,7 @@ class InstallTest(unittest.TestCase):
   self.run_install(1600, 1200)
   migrated = json.loads(manifest.read_text())
   self.assertIn(installer.INI, migrated['files'])
-  self.assertEqual(config.read_bytes(), template.read_bytes())
+  self.assertEqual(config.read_bytes(), template.read_bytes().replace(b'Width=0',b'Width=1600').replace(b'Height=0',b'Height=1200'))
 
  def test_legacy_three_file_manifest_restores(self):
   self.run_install()
@@ -202,7 +202,8 @@ class InstallTest(unittest.TestCase):
     self.run_install()
    baseline = {name: (self.game/name).read_bytes() if (self.game/name).exists() else None for name in names}
    prior = manifest.read_bytes() if manifest.exists() else None
-   for target, occurrence in [(name,1) for name in names]+[('manifest.json',1),('manifest.json',2)]:
+   replaced = tuple(name for name in names if not (updating and name == installer.INI))
+   for target, occurrence in [(name,1) for name in replaced]+[('manifest.json',1),('manifest.json',2)]:
     hits = 0
     def interrupt(path, data):
      nonlocal hits
@@ -252,6 +253,39 @@ install.install(Path(sys.argv[2]),2560,1440,writer=killed)
   self.run_install(1920,1080)
   installer.restore(self.game)
   self.assertEqual((self.game/'game.exe').read_bytes(),self.original['game.exe'])
+
+ def test_optional_installer_adopts_exact_extracted_payload(self):
+  for name in ('d3d9.dll',installer.NOTICE):
+   shutil.copy2(ROOT/'dist'/name,self.game/name)
+  config=self.game/installer.INI
+  config.write_text('[GuruminModern]\nFrameCap=175\nFreeCamera=0\n')
+  before=config.read_bytes()
+  self.run_install()
+  self.assertEqual(config.read_bytes(),before)
+  self.run_install(2560,1440)
+  self.assertEqual(config.read_bytes(),before)
+  installer.restore(self.game)
+  self.assertFalse((self.game/'d3d9.dll').exists())
+  self.assertEqual(config.read_bytes(),before)
+
+ def test_managed_install_then_copied_release_payload(self):
+  self.run_install()
+  manifest=self.game/'GuruminModern-backup/manifest.json'
+  prior=json.loads(manifest.read_text())
+  # Simulate a previous release's ownership hash, then a copy of this release.
+  for name in ('d3d9.dll',installer.NOTICE):
+   prior['files'][name]['installed_sha256']=installer.sha(b'previous release')
+   prior['files'][name]['previous_sha256']=None
+   shutil.copy2(ROOT/'dist'/name,self.game/name)
+  manifest.write_text(json.dumps(prior))
+  self.run_install(2560,1440)
+  installer.restore(self.game)
+  self.assertFalse((self.game/'d3d9.dll').exists())
+  # Restore also recognizes the current bundled files without reinstalling.
+  self.run_install()
+  manifest.write_text(json.dumps(prior))
+  installer.restore(self.game)
+  self.assertFalse((self.game/'d3d9.dll').exists())
 
  def test_status_reports_manifest_and_dll_errors(self):
   self.run_install()

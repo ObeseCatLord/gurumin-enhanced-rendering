@@ -960,6 +960,8 @@ int main() {
                                     "keep", iniFile));
   loadModernSettings();
   assert(!modernSettings.freeCamera && !modernSettings.cameraInteriorsOnly && modernSettings.invertX);
+  assert(modernSettings.resolution.width==GetSystemMetrics(SM_CXSCREEN) &&
+         modernSettings.resolution.height==GetSystemMetrics(SM_CYSCREEN));
   launcherWindow = reinterpret_cast<HWND>(0x1234);
   originalEndDialog = verifyDialogEnd;
   launcherDraft.resolution = {3440, 1440};

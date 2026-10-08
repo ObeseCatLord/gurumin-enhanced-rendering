@@ -24,6 +24,10 @@ static void loadModernSettings() {
         GetPrivateProfileIntA("GuruminModern", key, fallback, modernIni));
   };
   gurumin::Resolution r{read("Width", 0), read("Height", 0)};
+  // A direct DLL install has no patched executable or saved resolution yet.
+  // Use the desktop until the user chooses a resolution in the native launcher.
+  if (r.width == 0 && r.height == 0)
+    r = {GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
   if (gurumin::validResolution(r))
     modernSettings.resolution = r;
   int cap = read("FrameCap", 0);

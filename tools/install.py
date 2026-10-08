@@ -96,6 +96,10 @@ def installed_files_match(root, manifest, names=None, originals=None):
    if entry['existed'] and current == originals.get(name):
     continue
   if current is None or sha(current) != entry['installed_sha256']:
+   if name in ('d3d9.dll', NOTICE):
+    bundled = Path(__file__).resolve().parents[1] / 'dist' / name
+    if bundled.exists() and current == bundled.read_bytes():
+     continue  # Exact release payload copied over an older managed install.
    if current is not None and sha(current) == entry.get('previous_sha256'):
     continue
    raise SystemExit(f'{name} changed since installation; refusing to overwrite')
@@ -222,7 +226,7 @@ def install(root, width, height, writer=write):
  template = Path(__file__).resolve().parents[1] / 'dist' / INI
  if template.exists():
   try:
-   candidates[INI] = template.read_bytes()
+   candidates[INI] = template.read_bytes().replace(b'Width=0', f'Width={width}'.encode()).replace(b'Height=0', f'Height={height}'.encode())
   except OSError as exc:
    raise SystemExit(f'{INI}: cannot read installer template: {exc}')
  notice = Path(__file__).resolve().parents[1] / 'dist' / NOTICE
@@ -243,21 +247,26 @@ def install(root, width, height, writer=write):
    if before[INI] is not None:
     raise SystemExit(f'{INI}: unowned file already exists; refusing install')
    manifest['files'][INI] = {'existed': False}
-  elif INI in candidates and before[INI] is not None and sha(before[INI]) != manifest['files'][INI]['installed_sha256']:
-   # Configuration is user-editable after we own it. Leave it untouched while
+  elif INI in candidates and before[INI] is not None:
+   # Owned configuration, including adopted manual preferences, stays intact while
    # normal executable/DLL updates proceed.
    candidates.pop(INI)
    before.pop(INI)
  else:
-  if before['d3d9.dll'] is not None:
+  # The optional installer may be run after the release DLL was copied into
+  # the game folder. Adopt only the exact bundled DLL, never an unknown proxy.
+  extracted = before['d3d9.dll'] == candidates['d3d9.dll']
+  if before['d3d9.dll'] is not None and not extracted:
    raise SystemExit('A D3D9 DLL already exists; resolve that conflict first')
-  if NOTICE in before and before[NOTICE] is not None:
+  if NOTICE in before and before[NOTICE] is not None and not (extracted and before[NOTICE] == candidates[NOTICE]):
    raise SystemExit(f'{NOTICE}: unowned file already exists; refusing install')
   if INI in before and before[INI] is not None:
-   raise SystemExit(f'{INI}: unowned file already exists; refusing install')
+   if not extracted:
+    raise SystemExit(f'{INI}: unowned file already exists; refusing install')
+   candidates[INI] = before[INI]  # Preserve settings saved after a manual install.
   manifest = {'files': {}}
   for name in names:
-   existed = before[name] is not None
+   existed = before[name] is not None and not (extracted and name in ('d3d9.dll', NOTICE))
    entry = {'existed': existed}
    if existed:
     entry['backup_sha256'] = sha(before[name])
@@ -265,7 +274,7 @@ def install(root, width, height, writer=write):
   try:
    backup.mkdir(exist_ok=True)
    for name in names:
-    if before[name] is not None:
+    if manifest['files'][name]['existed']:
      write(backup / name, before[name])
   except OSError as exc:
    raise SystemExit(f'Backup error: {exc}')

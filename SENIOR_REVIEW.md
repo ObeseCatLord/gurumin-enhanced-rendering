@@ -198,3 +198,19 @@ after the core install has committed now asks the user to inspect status rather
 than claiming every file change was rolled back. Packaged Linux and Windows
 (Wine) end-to-end detection/install/update/restore checks passed, including
 Unicode paths. Four portable C++ regression fixtures also pass.
+
+## Direct-copy release layout
+
+Astra xhigh approved retaining the existing runtime and installer, with three
+corrections adopted after its focused recheck:
+
+| Finding | Disposition |
+|---|---|
+| Adopted manual preferences reset on a later reinstall | Preserve every existing owned INI, not only bytes differing from its recorded hash. Adoption/reinstall/restore regression passes. |
+| Copying a new release over an older installer manifest blocks restoration | Shared validation additionally accepts only this bundle's byte-exact DLL and license notice. Original backups remain verified; unknown files still refuse. Both reinstall and direct restore cases pass. |
+| Desktop fallback replaces the optional installer's explicit resolution | Fresh INI creation carries the selected width/height. Existing preferences remain untouched. |
+
+The final Python suite passes 37 tests. Both relocated optional entry points pass
+packaged end-to-end checks. Actual Steam launch with unmodified stock executables
+and a copied DLL starts at3440x1440 and allocates a3440x3440 internal target.
+Astra's focused recheck found no remaining blockers in these changed boundaries.
