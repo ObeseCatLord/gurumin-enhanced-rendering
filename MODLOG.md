@@ -407,3 +407,24 @@ Sixteen owned-binary installer checks passed; both executables, live preferences
 outfit DLL/map, and current saves retained their hashes. Steam options were not
 changed. Higher AF requires native world filtering; existing nearest preferences
 remain intact.
+
+## Town camera policy and release 1.0.4 (2026-10-08)
+
+Replace the interiors-only preference with CameraOutOfTownOnly, default1.
+The exclusion requires scene12 and the bounded mp_0C0 asset identity; interior
+classification remains a separate collision policy. FreeCamera defaults0 and
+InvertCameraX defaults1. Existing legacy interiors-only values are not reinterpreted.
+
+The native movement helper at RVA32CB60 still runs once and retains its return
+value and carry behavior. Only the proven caller at return21D499 can replace
+its two scalar outputs with the normalized horizontal basis from the owned
+orbit view. Simulation cadence, authored anchors and other native callers stay
+native. Ownership, scene, tick and main-view guards bound the adapter. Portable
+direction/default fixtures and the x86 fixture build pass; controller movement
+acceptance remains pending.
+
+A normal Steam startup with GE-Proton10-34 initialized3440x1440 rendering,
+all six optional camera hooks, 16x anisotropy and2048 shadow targets. The earlier
+Experimental startup failure occurred before renderer initialization. Selecting
+the installed GE compatibility tool fixed that startup without changing the
+renderer or outfit files. No global Proton installation was modified.

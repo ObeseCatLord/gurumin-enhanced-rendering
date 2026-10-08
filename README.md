@@ -30,6 +30,10 @@ I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which 
 
 ## Install — copy into the game folder
 
+Extract the ZIP and copy the contents of its single release folder into the
+Gurumin game directory, next to `gurumin.exe`. Windows needs no installer.
+Updates preserve your existing settings. The same ZIP works on Windows and Linux.
+
 You can use the optional installer to automatically find and install the mod for you, if you are too lazy to drag & drop it
 On Linux/Steam Deck, set this per-game Steam launch option once:
 
@@ -40,6 +44,17 @@ WINEDLLOVERRIDES="d3d9=n,b" %command%
 The optional Linux installer can do this automatically. Close Steam while it
 updates that setting. If you already use other launch options, the installer
 preserves supported wrappers, arguments and other DLL overrides.
+
+Linux startup was tested with **GE-Proton10-34**. If Proton Experimental exits
+before the launcher appears, select GE-Proton10-34 in Steam → Properties →
+Compatibility. Install that compatibility tool first if it is not available.
+The installer sets launch options; it does not select or install Proton.
+
+If the separate PSP outfits mod is also installed, retain both overrides:
+
+```text
+WINEDLLOVERRIDES="d3d9=n,b;dinput8=n,b" %command%
+```
 
 ### Configure the game
 
@@ -66,6 +81,7 @@ the selected texture category.
   keeps the native camera in the main town outdoors; rooms, shops and outdoor
   dungeons still allow freecam. Turn it off to orbit around the town camera
   anchors too. Movement follows the rotated view while town freecam is active.
+  **Free camera** itself remains off by default; **Invert X** remains on.
 - The game remains a 30 Hz simulation; interpolation smooths rendering rather
   than converting its entire gameplay and animation system to a new tick rate.
 - Runtime validation included 3440×1440 at approximately 175 FPS with 30 Hz gameplay,

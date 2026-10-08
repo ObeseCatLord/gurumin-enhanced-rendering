@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -13,6 +14,8 @@ ROOT=Path(__file__).resolve().parents[1]
 PYTHON_URL='https://www.python.org/ftp/python/3.13.16/python-3.13.16-embed-amd64.zip'
 PYTHON_SHA='97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297'
 VERSION=(ROOT/'VERSION').read_text().strip()
+if not re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?', VERSION):
+    raise SystemExit('Invalid release version: expected numeric major.minor[.patch]')
 BASENAME='Gurumin-Enhanced-Rendering-'+VERSION
 
 

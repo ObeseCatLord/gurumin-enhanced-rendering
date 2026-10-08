@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.0.4 — 2026-10-08
 
 - Replace Interiors only with Out of town only, enabled by default, excluding
   just the main town exterior while allowing freecam in rooms and dungeons.
 - Align fixed-camera freecam movement with the visible camera direction while
   retaining authored anchor following and native movement timing.
+- Document the successfully tested GE-Proton10-34 Steam setup and combined
+  renderer/outfit DLL overrides. The optional installer still configures launch
+  options; selecting the compatibility tool remains a Steam setting.
 
 ## 1.0.3 — 2026-10-08
 

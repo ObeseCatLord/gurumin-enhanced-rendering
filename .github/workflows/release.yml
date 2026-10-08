@@ -1,0 +1,111 @@
+name: Build and publish release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renderer-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'ObeseCatLord/gurumin-enhanced-rendering' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ mingw-w64
+      - name: Build and check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build.sh
+          python3 -m unittest discover -s tests -p '*_test.py'
+          for fixture in settings rhythm affine shadows; do
+            g++ -std=c++17 -O2 -Wall -Wextra "tests/${fixture}_test.cpp" -o "/tmp/${fixture}_test"
+            "/tmp/${fixture}_test"
+          done
+          i686-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -static -Ivendor/minhook/include tests/native_render_test.cpp dist/buffer.o dist/hook.o dist/trampoline.o dist/hde32.o -ladvapi32 -o dist/native-render-test.exe
+          python3 tools/package.py
+      - name: Validate package and prepare notes
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, re, zipfile
+          from pathlib import Path
+          version = Path('VERSION').read_text().strip()
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid release version'
+          basename = 'Gurumin-Enhanced-Rendering-' + version
+          archive = Path('release', basename + '.zip')
+          assert Path('release/SHA256SUMS').read_text() == hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n'
+          with zipfile.ZipFile(archive) as z:
+              prefix = basename + '/'
+              assert all(n.startswith(prefix) and '..' not in Path(n).parts for n in z.namelist())
+              assert z.read(prefix + 'd3d9.dll') == Path('dist/d3d9.dll').read_bytes()
+              assert prefix + 'GuruminModern.ini' not in z.namelist()
+              optional = prefix + 'Optional installers/'
+              manifest = json.loads(z.read(optional + 'payload.json'))
+              assert manifest['version'] == version
+              for name, expected in manifest['sha256'].items():
+                  assert hashlib.sha256(z.read(optional + name)).hexdigest() == expected, name
+              assert not any(Path(n).name.lower() in ('game.exe', 'gurumin.exe', 'dinput8.dll') for n in z.namelist())
+          changelog = Path('CHANGELOG.md').read_text()
+          section = changelog.split('## ' + version + ' — ', 1)[1].split('\n', 1)[1].split('\n## ', 1)[0].strip()
+          notes = section + '\n\nOne ZIP for Windows and Linux. Extract and copy the release folder contents into the game folder. Optional installers provide automatic Steam detection; launch the game through Steam.\n\nLinux: set `WINEDLLOVERRIDES="d3d9=n,b" %command%`. With the separate PSP outfits mod, use `WINEDLLOVERRIDES="d3d9=n,b;dinput8=n,b" %command%`. Tested with GE-Proton10-34.\n\nFree camera defaults off; Out of town only and Invert X default on. Existing preferences are preserved.\n\nValidation: source build, portable regression tests, Python suite, native x86 fixture compilation and package integrity. The Steam startup was checked at 3440×1440; the new town joystick mapping still needs controller playtesting. PSP outfit assets are not included.\n'
+          Path('release/RELEASE_NOTES.md').write_text(notes)
+          PY
+      - name: Publish complete release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          tag="v${version}"
+          check_tag() {
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" "refs/tags/${tag}^{}" > /tmp/release-tag; then
+              git fetch --no-tags --depth=1 origin "refs/tags/${tag}"
+              [[ $(git rev-parse 'FETCH_HEAD^{commit}') == "$GITHUB_SHA" ]] || { echo 'Release tag belongs to another commit'; return 1; }
+            else
+              status=$?
+              [[ $status == 2 && $1 == allow-absent ]] || return 1
+            fi
+          }
+          check_tag allow-absent
+          # A rerun may resume our draft; never replace a published release.
+          gh api "repos/${GH_REPO}/releases" --paginate --jq ".[] | select(.tag_name == \"${tag}\") | .id" > /tmp/existing-release-id
+          mapfile -t release_ids < /tmp/existing-release-id
+          [[ ${#release_ids[@]} -le 1 ]] || { echo 'Multiple releases match this version'; exit 1; }
+          if [[ ${#release_ids[@]} == 1 ]]; then
+            gh api "repos/${GH_REPO}/releases/${release_ids[0]}" > /tmp/existing-release.json
+            python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          r = json.loads(Path('/tmp/existing-release.json').read_text())
+          version = Path('VERSION').read_text().strip()
+          assert r['tag_name'] == 'v' + version and r['draft'] and r['target_commitish'] == os.environ['GITHUB_SHA'], 'Release exists or belongs to another commit'
+          PY
+          fi
+          if [[ ! -s /tmp/release-tag ]]; then
+            gh api --method POST "repos/${GH_REPO}/git/refs" -f "ref=refs/tags/${tag}" -f "sha=${GITHUB_SHA}" > /dev/null
+            check_tag require-present
+          fi
+          if [[ ${#release_ids[@]} == 0 ]]; then
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Gurumin Enhanced Rendering ${version}" --notes-file release/RELEASE_NOTES.md
+          fi
+          gh release upload "$tag" "release/Gurumin-Enhanced-Rendering-${version}.zip" release/SHA256SUMS --clobber
+          check_tag require-present
+          gh release edit "$tag" --draft=false --latest

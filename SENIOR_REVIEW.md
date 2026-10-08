@@ -232,3 +232,37 @@ Astra xhigh approved the client-process correction. Its additional tests were
 adopted: an executable actually named steam outside the chosen root must not
 block installation, and a symlinked Steam root must still identify its client.
 The actual native client launch-option write and repeat-install checks passed.
+
+## Town camera policy — Astra xhigh, 2026-10-08
+
+The requested design and implementation reviews used independently verified
+gpt-6-astra/xhigh. The native movement caller, scalar-output ABI and existing
+authored-camera carry path were checked before implementation.
+
+| Recommendation | Disposition |
+|---|---|
+| Exclude the town by exact scene and asset identity | Adopted. Only the main town exterior is excluded; rooms and dungeons retain freecam eligibility. |
+| Keep collision interior classification separate from camera ownership | Adopted. The existing floor/collision policy remains. |
+| Adapt native movement outputs rather than replace the input or camera system | Adopted. Original helper runs once; only its proven gameplay caller can use the owned horizontal camera basis. |
+| Preserve input magnitude, native return value and carry behavior | Adopted. Portable and x86 regression fixtures cover turns, diagonals, vertical pitch, zero input and scalar boundaries. |
+| Keep ownership current without requiring a new right-stick event | Adopted. Held movement can use the engaged orbit while scene/view/tick guards still validate. |
+| Treat hook installation as runtime evidence, not controller acceptance | Adopted. Steam startup installs all six hooks; new town joystick alignment still needs playtesting. |
+
+## Release automation boundary — Astra xhigh, 2026-10-08
+
+The workflow reuses the existing packager and installer rather than creating a
+second distribution format. Reviewer gpt-6-astra/xhigh was independently verified.
+
+| Finding | Disposition |
+|---|---|
+| An existing tag can differ from a release's target_commitish | Adopted. Resolve lightweight/annotated tags to their commit, require the exact workflow SHA, and never move existing tags. |
+| Published-tag lookup is not a reliable draft lookup | Adopted. Identify a single release ID from the authenticated collection and validate that draft by ID. |
+| A newer run must not claim a tag owned by an older untagged draft | Adopted. Validate draft ownership before creating any missing tag. |
+| A malformed version can escape the packager staging path | Adopted. Validate numeric major.minor[.patch] before constructing paths or deleting generated staging. |
+| Keep partial uploads unpublished and preserve existing releases | Adopted. Upload ZIP and checksum to an owned draft, then mark it public/latest after successful upload and source identity recheck. |
+
+Local syntax, build, portable tests, all37 Python tests and ZIP integrity checks
+passed. Packaging lint passed after excluding only the installed mod's own
+byte-identical NVIDIA license from the game comparison reference. That notice
+is retained in the release as required. Native x86 fixture compilation passed;
+execution and end-to-end Actions publication were not performed in this session.
