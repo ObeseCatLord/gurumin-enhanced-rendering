@@ -250,8 +250,11 @@ authored-camera carry path were checked before implementation.
 
 ## Release automation boundary — Astra xhigh, 2026-10-08
 
-The workflow reuses the existing packager and installer rather than creating a
-second distribution format. Reviewer gpt-6-astra/xhigh was independently verified.
+A fallback workflow was reviewed while direct GitHub uploads were unavailable.
+Reviewer gpt-6-astra/xhigh was independently verified. After network access was
+restored, that temporary adapter was removed; publication uses the existing
+packager and direct GitHub release upload. The source-tag and draft checks below
+also apply to that publication sequence.
 
 | Finding | Disposition |
 |---|---|
@@ -265,4 +268,5 @@ Local syntax, build, portable tests, all37 Python tests and ZIP integrity checks
 passed. Packaging lint passed after excluding only the installed mod's own
 byte-identical NVIDIA license from the game comparison reference. That notice
 is retained in the release as required. Native x86 fixture compilation passed;
-execution and end-to-end Actions publication were not performed in this session.
+execution was not performed in the preparation session. The fallback workflow
+was never deployed or executed.
