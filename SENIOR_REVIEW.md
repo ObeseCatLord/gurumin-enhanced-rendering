@@ -214,3 +214,21 @@ The final Python suite passes 37 tests. Both relocated optional entry points pas
 packaged end-to-end checks. Actual Steam launch with unmodified stock executables
 and a copied DLL starts at3440x1440 and allocates a3440x3440 internal target.
 Astra's focused recheck found no remaining blockers in these changed boundaries.
+
+### Real Linux installer test
+
+The packaged Linux entry point was run against the actual native Steam client
+and external Gurumin library. It saved the selected account's app322290 options
+as `WINEDLLOVERRIDES="d3d9=n,b" %command%` and recorded the previously absent
+option for restoration. Repeating installation leaves the entire localconfig
+byte-identical. The game is still started through Steam, not by the installer.
+
+This test exposed a false-positive Steam-running check: surviving gameoverlayui
+and srt-logger processes were treated as the client. The guard now recognizes the
+Steam client executable beneath the selected root and ignores helpers; regression
+coverage retains rejection of an actual client and checks surviving helper names.
+
+Astra xhigh approved the client-process correction. Its additional tests were
+adopted: an executable actually named steam outside the chosen root must not
+block installation, and a symlinked Steam root must still identify its client.
+The actual native client launch-option write and repeat-install checks passed.

@@ -317,7 +317,7 @@ def _selected_profile(root: Path, steam_user: Optional[str]) -> Path:
 
 
 def steam_running(steam_root: Path, proc_root: Path = Path("/proc")) -> bool:
- """Check only process executables below this Steam root; never read environments."""
+ """Check Steam client executables below this root; ignore leftover overlays/loggers."""
  if os.name != "posix" or not proc_root.is_dir():
   return False
  try:
@@ -328,7 +328,8 @@ def steam_running(steam_root: Path, proc_root: Path = Path("/proc")) -> bool:
    try:
     executable = (process / "exe").resolve(strict=True)
     executable.relative_to(root)
-    return True
+    if executable.name.casefold() == "steam":
+     return True
    except (OSError, ValueError):
     continue
  except OSError:

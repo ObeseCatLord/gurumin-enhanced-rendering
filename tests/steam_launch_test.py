@@ -213,7 +213,15 @@ class SteamLaunchTest(unittest.TestCase):
   process.mkdir(parents=True)
   (process / "exe").symlink_to(executable)
   self.assertTrue(self.old_running(self.root, proc))
-  outside = self.base / "outside"
+  alias=self.base/"SteamAlias";alias.symlink_to(self.root,target_is_directory=True)
+  self.assertTrue(self.old_running(alias,proc))
+  # Helpers can outlive Steam and cannot write its per-profile LaunchOptions.
+  for name in ('gameoverlayui', 'srt-logger', 'steamwebhelper'):
+   helper=executable.parent/name;helper.write_bytes(b'x')
+   (process/'exe').unlink();(process/'exe').symlink_to(helper)
+   self.assertFalse(self.old_running(self.root,proc))
+  outside = self.base / "outside" / "steam"
+  outside.parent.mkdir()
   outside.write_bytes(b"x")
   (process / "exe").unlink()
   (process / "exe").symlink_to(outside)

@@ -27,7 +27,7 @@ tick of visual latency; it does not speed up gameplay.
 ## Install — copy into the game folder
 
 Close Gurumin. Extract the ZIP, then copy the **contents** of its single
-`Gurumin-Enhanced-Rendering-1.0.1` folder into the game folder beside `game.exe`.
+`Gurumin-Enhanced-Rendering-1.0.2` folder into the game folder beside `game.exe`.
 The top-level `d3d9.dll` is the mod. **No installer or executable patch is required.**
 Start the game normally through Steam. The mod uses your desktop resolution on
 first launch; select another resolution in the game's Graphics / Audio settings.

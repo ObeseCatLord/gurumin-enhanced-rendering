@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-10-07
+
+- Fix Linux installation refusing a closed Steam client because overlay or
+  logging helpers survived shutdown. Verified installation on the actual system,
+  correct per-game launch options, repeat-install idempotence and Astra recheck.
+
 ## 1.0.1 — 2026-10-07
 
 - Copy the single release folder's contents directly into the game directory.
