@@ -62,8 +62,10 @@ the selected texture category.
 - FXAA is spatial AA. HUD text and menus are outside the gameplay filter;
   world-space markers already rendered into the scene are included. Unsupported
   native effect paths retain their native shader and sampling behavior.
-- Interiors only currently recognizes Parin's room, the old man's room, the cake
-  shop and general store. Other dungeon interiors are not reliably classified.
+- **Out of town only** is enabled by default. With Free camera enabled, this
+  keeps the native camera in the main town outdoors; rooms, shops and outdoor
+  dungeons still allow freecam. Turn it off to orbit around the town camera
+  anchors too. Movement follows the rotated view while town freecam is active.
 - The game remains a 30 Hz simulation; interpolation smooths rendering rather
   than converting its entire gameplay and animation system to a new tick rate.
 - Runtime validation included 3440×1440 at approximately 175 FPS with 30 Hz gameplay,

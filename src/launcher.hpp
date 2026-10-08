@@ -34,7 +34,9 @@ static void loadModernSettings() {
   if (gurumin::validFrameCap(cap))
     modernSettings.frameCap = cap;
   modernSettings.freeCamera = read("FreeCamera", 0) != 0;
-  modernSettings.cameraInteriorsOnly = read("CameraInteriorsOnly", 0) != 0;
+  // The obsolete interiors-only key has different semantics; absent new keys
+  // use the town exclusion default instead of inheriting that preference.
+  modernSettings.cameraOutOfTownOnly = read("CameraOutOfTownOnly", 1) != 0;
   modernSettings.invertX = read("InvertCameraX", 1) != 0;
   modernSettings.invertY = read("InvertCameraY", 0) != 0;
   modernSettings.cameraYawSpeed =
@@ -79,7 +81,7 @@ static bool saveModernSettings(const gurumin::ModernSettings &s) {
   write("Height", s.resolution.height);
   write("FrameCap", s.frameCap);
   write("FreeCamera", s.freeCamera);
-  write("CameraInteriorsOnly", s.cameraInteriorsOnly);
+  write("CameraOutOfTownOnly", s.cameraOutOfTownOnly);
   write("InvertCameraX", s.invertX);
   write("InvertCameraY", s.invertY);
   write("ShadowResolution", s.shadowResolution);
@@ -116,7 +118,7 @@ using EndDialogFn = BOOL(WINAPI *)(HWND, INT_PTR);
 static CreateDialogFn originalCreateDialog;
 static EndDialogFn originalEndDialog;
 static HWND launcherWindow, graphicsPage, resolutionCombo, capCombo,
-    freeCameraCheck, interiorsOnlyCheck, invertXCheck, invertYCheck;
+    freeCameraCheck, outOfTownOnlyCheck, invertXCheck, invertYCheck;
 static WNDPROC launcherProc;
 static WNDPROC graphicsProc;
 static std::vector<gurumin::Resolution> launcherModes;
@@ -211,7 +213,7 @@ static LRESULT CALLBACK modernGraphicsProc(HWND window, UINT message,
                                            WPARAM wParam, LPARAM lParam) {
   if(message==WM_COMMAND && LOWORD(wParam)==6002 &&
      HIWORD(wParam)==BN_CLICKED)
-    EnableWindow(interiorsOnlyCheck,
+    EnableWindow(outOfTownOnlyCheck,
         SendMessageA(freeCameraCheck,BM_GETCHECK,0,0)==BST_CHECKED);
   if(message==WM_COMMAND && LOWORD(wParam)==6007 &&
      HIWORD(wParam)==BN_CLICKED) { openMoreGraphics(); return 0; }
@@ -315,8 +317,8 @@ static LRESULT CALLBACK modernLauncherProc(HWND window, UINT message,
         int(SendMessageA(capCombo, CB_GETITEMDATA, capIndex, 0));
     launcherDraft.freeCamera =
         SendMessageA(freeCameraCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
-    launcherDraft.cameraInteriorsOnly =
-        SendMessageA(interiorsOnlyCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    launcherDraft.cameraOutOfTownOnly =
+        SendMessageA(outOfTownOnlyCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     launcherDraft.invertX =
         SendMessageA(invertXCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     launcherDraft.invertY =
@@ -346,8 +348,8 @@ static LRESULT CALLBACK modernLauncherProc(HWND window, UINT message,
     launcherDraft = {};
     SendMessageA(capCombo, CB_SETCURSEL, 0, 0);
     SendMessageA(freeCameraCheck, BM_SETCHECK, BST_UNCHECKED, 0);
-    SendMessageA(interiorsOnlyCheck, BM_SETCHECK, BST_UNCHECKED, 0);
-    EnableWindow(interiorsOnlyCheck, FALSE);
+    SendMessageA(outOfTownOnlyCheck, BM_SETCHECK, BST_CHECKED, 0);
+    EnableWindow(outOfTownOnlyCheck, FALSE);
     SendMessageA(invertXCheck, BM_SETCHECK, BST_CHECKED, 0);
     SendMessageA(invertYCheck, BM_SETCHECK, BST_UNCHECKED, 0);
   }
@@ -445,7 +447,7 @@ static void customizeLauncher(HWND window) {
     MoveWindow(GetDlgItem(graphicsPage, 1069), originalAudio.left,
                originalAudio.top, originalAudio.right - originalAudio.left,
                originalAudio.bottom - originalAudio.top, TRUE);
-    capCombo = freeCameraCheck = interiorsOnlyCheck = invertXCheck = invertYCheck = nullptr;
+    capCombo = freeCameraCheck = outOfTownOnlyCheck = invertXCheck = invertYCheck = nullptr;
   };
   static const gurumin::Resolution stock[] = {{800, 600},   {1024, 600},
                                               {1280, 720},  {1280, 960},
@@ -497,8 +499,8 @@ static void customizeLauncher(HWND window) {
   freeCameraCheck = modernControl("BUTTON", "Free camera",
                                   WS_TABSTOP | BS_AUTOCHECKBOX, 6002, 276, 172,
                                   90, 12, font);
-  interiorsOnlyCheck = modernControl("BUTTON", "Interiors only",
-      WS_TABSTOP | BS_AUTOCHECKBOX, 6008, 370, 172, 84, 12, font);
+  outOfTownOnlyCheck = modernControl("BUTTON", "Out of town only",
+      WS_TABSTOP | BS_AUTOCHECKBOX, 6008, 366, 172, 94, 12, font);
   invertXCheck =
       modernControl("BUTTON", "Invert camera X", WS_TABSTOP | BS_AUTOCHECKBOX,
                     6006, 276, 191, 90, 12, font);
@@ -507,7 +509,7 @@ static void customizeLauncher(HWND window) {
                     6003, 370, 191, 84, 12, font);
   HWND more = modernControl("BUTTON", "More graphics settings...",
                 WS_TABSTOP,6007,276,211,178,18,font);
-  if (!capCombo || !freeCameraCheck || !interiorsOnlyCheck || !invertXCheck || !invertYCheck || !more) {
+  if (!capCombo || !freeCameraCheck || !outOfTownOnlyCheck || !invertXCheck || !invertYCheck || !more) {
     log("Launcher modern controls could not be created");
     rollback();
     return;
@@ -537,9 +539,9 @@ static void customizeLauncher(HWND window) {
   }
   SendMessageA(freeCameraCheck, BM_SETCHECK,
                modernSettings.freeCamera ? BST_CHECKED : BST_UNCHECKED, 0);
-  SendMessageA(interiorsOnlyCheck, BM_SETCHECK,
-               modernSettings.cameraInteriorsOnly ? BST_CHECKED : BST_UNCHECKED, 0);
-  EnableWindow(interiorsOnlyCheck, modernSettings.freeCamera);
+  SendMessageA(outOfTownOnlyCheck, BM_SETCHECK,
+               modernSettings.cameraOutOfTownOnly ? BST_CHECKED : BST_UNCHECKED, 0);
+  EnableWindow(outOfTownOnlyCheck, modernSettings.freeCamera);
   SendMessageA(invertXCheck, BM_SETCHECK,
                modernSettings.invertX ? BST_CHECKED : BST_UNCHECKED, 0);
   SendMessageA(invertYCheck, BM_SETCHECK,

@@ -149,6 +149,19 @@ static void __cdecl verifyCameraWorld() {
   }
   if(replaceWorldEye) game<float>(0x1cf17a0)=1234;
 }
+static unsigned movementCalls;
+static unsigned __cdecl verifyCameraMovement(float *outX,float *outY,float x,float y) {
+  ++movementCalls;
+  // Model the native carry/input side effects and a transitional blend output.
+  memcpy(reinterpret_cast<void*>(gameBase+0x1d7b5f0),
+      reinterpret_cast<void*>(gameBase+0x1d7b5b0),16);
+  memcpy(reinterpret_cast<void*>(gameBase+0x1d7b600),
+      reinterpret_cast<void*>(gameBase+0x1ae4900),16);
+  game<float>(0x1d7b640)=x; game<float>(0x1d7b644)=y;
+  *outX=x==0 && y==0?-0.f:.125f;
+  *outY=x==0 && y==0?0.f:-.25f;
+  return 0; // This converter's normal native return is zero.
+}
 static float *__thiscall verifyBubbleAnchor(const float *matrix,float *out) {
   out[0]=matrix[12]; out[1]=matrix[13]; out[2]=matrix[14]; out[3]=0;
   return out;
@@ -631,7 +644,7 @@ int main() {
   FlushInstructionCache(GetCurrentProcess(), blocker, 6);
   nativeCamera = verifyCameraUpdate;
   supported = cameraHooksActive = modernSettings.freeCamera = true;
-  modernSettings.cameraInteriorsOnly=false;
+  modernSettings.cameraOutOfTownOnly=false;
   hudSeen = false;
   game<int>(0x1264a30)=1; // Ordinary native manual camera.
   resetCameraControls();
@@ -702,6 +715,78 @@ int main() {
   memcpy(reinterpret_cast<void*>(gameBase+0x1dffed8),rawEye.v,16);
   memcpy(reinterpret_cast<void*>(gameBase+0x1e00ee8),rawTarget.v,16);
   memcpy(reinterpret_cast<void*>(gameBase+0x9a9b00),builtView,64);
+  // Actual cdecl movement adapter with adjacent scalar outputs. Authored
+  // transitions retain native carry, while gameplay follows the visible basis.
+  nativeCameraMovement=verifyCameraMovement;
+  using MovementCaller=unsigned(__stdcall*)(float*,float*,float,float);
+  auto movementCall=reinterpret_cast<MovementCaller>(callerThunk(0x21d499,
+      reinterpret_cast<void*>(cameraMovementHook),4,false));
+  auto unrelatedMovement=reinterpret_cast<MovementCaller>(callerThunk(0x21d550,
+      reinterpret_cast<void*>(cameraMovementHook),4,false));
+  OrbitRenderPose savedMovementPose=orbitRenderPose;
+  char savedMap[64];memcpy(savedMap,reinterpret_cast<void*>(gameBase+0x527110),64);
+  char savedOrbitMap[64];memcpy(savedOrbitMap,orbitMapName,64);
+  strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_0C0");
+  strcpy(orbitMapName,"mp_0C0");
+  for(float yaw:{0.f,1.570796327f,3.141592654f,-1.570796327f}) {
+    orbitRenderPose=savedMovementPose;
+    float e[]={80,20-100.f,300,1},t[]={80,20,100,1};
+    memcpy(orbitRenderPose.eye.v,e,16);memcpy(orbitRenderPose.target.v,t,16);
+    assert(gurumin::orbitFromAnchor(orbitRenderPose.eye.v,orbitRenderPose.target.v,yaw,.2f));
+    for(unsigned age:{0u,1u}) {
+      orbitRenderPose.tick=game<unsigned>(0x1de47f4)-age;
+      float adjacent[2];unsigned beforeCalls=movementCalls;
+      for(gurumin::Stick stick:{gurumin::Stick{0,1},gurumin::Stick{1,0},gurumin::Stick{.6f,.8f}}) {
+        assert(movementCall(adjacent,adjacent+1,stick.x,stick.y)==0);
+        assert(std::abs(adjacent[0]-(stick.x*std::cos(yaw)-stick.y*std::sin(yaw)))<1e-5);
+        assert(std::abs(adjacent[1]-(stick.x*std::sin(yaw)+stick.y*std::cos(yaw)))<1e-5);
+        assert(game<float>(0x1d7b640)==stick.x && game<float>(0x1d7b644)==stick.y);
+        assert(!memcmp(reinterpret_cast<void*>(gameBase+0x1d7b5f0),
+            reinterpret_cast<void*>(gameBase+0x1d7b5b0),16));
+        assert(!memcmp(reinterpret_cast<void*>(gameBase+0x1d7b600),
+            reinterpret_cast<void*>(gameBase+0x1ae4900),16));
+      }
+      assert(movementCalls==beforeCalls+3);
+    }
+  }
+  float adjacent[2];
+  auto nativeFallback=[&]() {
+    unsigned before=movementCalls;
+    assert(movementCall(adjacent,adjacent+1,0,1)==0);
+    assert(movementCalls==before+1 && adjacent[0]==.125f && adjacent[1]==-.25f);
+  };
+  auto mappedForward=[&]() {
+    assert(movementCall(adjacent,adjacent+1,0,1)==0);
+    assert(std::abs(adjacent[0]-1)<1e-5 && std::abs(adjacent[1])<1e-5);
+  };
+  // Established mapping survives input suspension without a second smoother.
+  cameraSample.valid=false;hudSeen=false; mappedForward();hudSeen=true;
+  assert(unrelatedMovement(adjacent,adjacent+1,0,1)==0);
+  assert(adjacent[0]==.125f && adjacent[1]==-.25f);
+  assert(movementCall(adjacent,adjacent+1,0,0)==0 && std::signbit(adjacent[0]));
+  orbitRenderPose.tick=game<unsigned>(0x1de47f4)-2;nativeFallback();
+  orbitRenderPose.tick=game<unsigned>(0x1de47f4);
+  unsigned movementTick=game<unsigned>(0x1de47f4);
+  game<unsigned>(0x1de47f4)=0;orbitRenderPose.tick=~0u;mappedForward();
+  game<unsigned>(0x1de47f4)=movementTick;orbitRenderPose.tick=movementTick;
+  game<int>(0x515ec4)=1;nativeFallback();game<int>(0x515ec4)=0;
+  game<int>(0x126441c)=1;nativeFallback();game<int>(0x126441c)=0;
+  game<int>(0x1264a30)=1;nativeFallback();game<int>(0x1264a30)=0;
+  game<int>(0x791ec0)=0;nativeFallback();game<int>(0x791ec0)=1;
+  modernSettings.freeCamera=false;nativeFallback();modernSettings.freeCamera=true;
+  orbitRenderPose.built=false;nativeFallback();orbitRenderPose.built=true;
+  ++orbitRenderPose.scene;nativeFallback();--orbitRenderPose.scene;
+  strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_020");nativeFallback();
+  strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_0C0");
+  game<float>(0x1cf17a0)+=1;nativeFallback();game<float>(0x1cf17a0)-=1;
+  game<float>(0x9a9b00)+=1;nativeFallback();game<float>(0x9a9b00)-=1;
+  assert(movementCall(adjacent,adjacent+1,NAN,1)==0 && adjacent[0]==.125f);
+  orbitRenderPose.eye.v[0]=NAN;nativeFallback();
+  assert(cameraMovementOutputsIndependent(adjacent,adjacent+1));
+  assert(!cameraMovementOutputsIndependent(adjacent,adjacent));
+  assert(!cameraMovementOutputsIndependent(reinterpret_cast<float*>(gameBase+0x1d7b640),adjacent));
+  memcpy(reinterpret_cast<void*>(gameBase+0x527110),savedMap,64);
+  memcpy(orbitMapName,savedOrbitMap,64);orbitRenderPose=savedMovementPose;
   expectWorldPublication=true;
   cameraWorldHook(); ++frames; lastHudFrame=frames; cameraWorldHook();
   assert(worldCalls==2 && !memcmp(reinterpret_cast<void*>(gameBase+0x1cf17a0),rawEye.v,16));
@@ -779,7 +864,7 @@ int main() {
   memcpy(blocker,"\x33\xc0\xc3",3);
   FlushInstructionCache(GetCurrentProcess(),blocker,6);
   game<int>(0x12646ac)=0; game<int>(0x1264a30)=1;
-  modernSettings.cameraInteriorsOnly=true;
+  modernSettings.cameraOutOfTownOnly=true;
   game<int>(0xf32c78)=2;
   strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_020");
   assert(orbitCameraOwned());
@@ -791,12 +876,12 @@ int main() {
   assert(!fixedOrbitEngaged && !cameraSample.valid && orbitControls.pitch==0);
   game<int>(0xf32c78)=102;
   strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_102");
-  assert(!orbitCameraOwned());
+  assert(orbitCameraOwned());
   modernSettings.freeCamera=false;
   game<int>(0xf32c78)=2;
   strcpy(reinterpret_cast<char*>(gameBase+0x527110),"mp_020");
   assert(!orbitCameraOwned());
-  modernSettings.freeCamera=true; modernSettings.cameraInteriorsOnly=false;
+  modernSettings.freeCamera=true; modernSettings.cameraOutOfTownOnly=false;
   DestroyWindow(gameWindow); gameWindow=nullptr;
 
   // Exercise the actual draw adapter with a bounded D3D vtable fixture.
@@ -958,8 +1043,14 @@ int main() {
   strcpy(modernIni, iniFile);
   assert(WritePrivateProfileStringA("GuruminModern", "ExistingPreference",
                                     "keep", iniFile));
+  // The old option's values cannot be reinterpreted as the new town policy.
+  for(const char *legacy:{"0","1"}) {
+    assert(WritePrivateProfileStringA("GuruminModern","CameraInteriorsOnly",legacy,iniFile));
+    loadModernSettings();
+    assert(modernSettings.cameraOutOfTownOnly);
+  }
   loadModernSettings();
-  assert(!modernSettings.freeCamera && !modernSettings.cameraInteriorsOnly && modernSettings.invertX);
+  assert(!modernSettings.freeCamera && modernSettings.cameraOutOfTownOnly && modernSettings.invertX);
   assert(modernSettings.resolution.width==GetSystemMetrics(SM_CXSCREEN) &&
          modernSettings.resolution.height==GetSystemMetrics(SM_CYSCREEN));
   launcherWindow = reinterpret_cast<HWND>(0x1234);
@@ -967,7 +1058,7 @@ int main() {
   launcherDraft.resolution = {3440, 1440};
   launcherDraft.frameCap = 175;
   launcherDraft.freeCamera = true;
-  launcherDraft.cameraInteriorsOnly = true;
+  launcherDraft.cameraOutOfTownOnly = true;
   launcherDraft.invertX = true;
   launcherDraft.shadowResolution=1024;
   launcherDraft.antiAliasing=2;
@@ -982,9 +1073,9 @@ int main() {
          modernSettings.frameCap == 175);
   assert(GetPrivateProfileIntA("GuruminModern", "Width", 0, iniFile) == 3440);
   assert(GetPrivateProfileIntA("GuruminModern", "InvertCameraX", 0, iniFile) == 1);
-  assert(GetPrivateProfileIntA("GuruminModern", "CameraInteriorsOnly", 0, iniFile) == 1);
+  assert(GetPrivateProfileIntA("GuruminModern", "CameraOutOfTownOnly", 0, iniFile) == 1);
   loadModernSettings();
-  assert(modernSettings.freeCamera && modernSettings.cameraInteriorsOnly);
+  assert(modernSettings.freeCamera && modernSettings.cameraOutOfTownOnly);
   assert(GetPrivateProfileIntA("GuruminModern","ShadowResolution",0,iniFile)==1024);
   assert(GetPrivateProfileIntA("GuruminModern","AntiAliasing",0,iniFile)==2);
   assert(GetPrivateProfileIntA("GuruminModern","UIFiltering",1,iniFile)==0);
@@ -1003,10 +1094,10 @@ int main() {
       callerThunk(0x1800, reinterpret_cast<void *>(launcherEndDialog), 2));
   differentCaller(launcherWindow, IDOK);
   assert(!acceptedSettings && modernSettings.frameCap == 175);
-  for(const char *key:{"FreeCamera","CameraInteriorsOnly","InvertCameraX"})
+  for(const char *key:{"FreeCamera","CameraOutOfTownOnly","InvertCameraX"})
     assert(WritePrivateProfileStringA("GuruminModern",key,"0",iniFile));
   loadModernSettings();
-  assert(!modernSettings.freeCamera && !modernSettings.cameraInteriorsOnly && !modernSettings.invertX);
+  assert(!modernSettings.freeCamera && !modernSettings.cameraOutOfTownOnly && !modernSettings.invertX);
   // Numeric cap preserves native synchronization; only explicit uncapped
   // mode requests immediate presentation. Exercise both CreateDevice and Reset.
   createDevice=verifyDeviceCreation; resetDevice=verifyDeviceReset;

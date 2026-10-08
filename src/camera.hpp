@@ -20,6 +20,8 @@ using CameraViewFn=float*(__cdecl*)(float*,CameraVector,CameraVector,float*,floa
 using CameraWorldFn=void(__cdecl*)();
 static CameraViewFn nativeCameraView;
 static CameraWorldFn nativeCameraWorld;
+using CameraMovementFn=unsigned(__cdecl*)(float*,float*,float,float);
+static CameraMovementFn nativeCameraMovement;
 struct OrbitRenderPose {
   CameraVector nativeEye{}, nativeTarget{}, eye{}, target{};
   float view[16]{};
@@ -58,8 +60,8 @@ static bool orbitCameraOwned() {
           reinterpret_cast<const char*>(gameBase+0x527110));
     }
   }
-  if (modernSettings.cameraInteriorsOnly &&
-      !gurumin::cameraInterior(game<int>(0xf32c78),
+  if (modernSettings.cameraOutOfTownOnly &&
+      gurumin::cameraTown(game<int>(0xf32c78),
           reinterpret_cast<const char*>(gameBase+0x527110),64)) return false;
   if (game<int>(0x1264a34) != 0 || manualBookActive()) return false;
   return reinterpret_cast<ManualCameraBlockerFn>(gameBase + 0x335670)() == 0 ||
@@ -290,6 +292,50 @@ static void __cdecl cameraWorldHook() {
   if(unchanged) { memcpy(eye,savedEye.v,16);memcpy(target,savedTarget.v,16); }
   else orbitRenderPose={};
 }
+static bool cameraMovementOutputsIndependent(float *x,float *y) {
+  if(!x || !y) return false;
+  uintptr_t a=uintptr_t(x),b=uintptr_t(y);
+  if((a<=b?b-a:a-b)<sizeof(float)) return false;
+  auto imageOverlap=[](uintptr_t p) {
+    return p<gameBase ? gameBase-p<sizeof(float) : p-gameBase<0x264a000u;
+  };
+  return !imageOverlap(a) && !imageOverlap(b);
+}
+static unsigned __cdecl cameraMovementHook(float *outX,float *outY,
+                                           float stickX,float stickY) {
+  uintptr_t caller=uintptr_t(__builtin_return_address(0))-gameBase;
+  // Run native anchor bookkeeping, input recording and carry updates first.
+  // Replace its blended direction only for an established freecam pose.
+  unsigned result=nativeCameraMovement(outX,outY,stickX,stickY);
+  if(caller!=0x21d499 || !orbitCameraOwned() ||
+      game<int>(0x515ec4) || !game<int>(0x791ec0) || !fixedGameplayOrbit() ||
+      !fixedOrbitEngaged || orbitCameraKind!=1 || !orbitRenderPose.built ||
+      orbitRenderPose.scene!=game<int>(0xf32c78) ||
+      unsigned(game<unsigned>(0x1de47f4)-orbitRenderPose.tick)>1 ||
+      !cameraMovementOutputsIndependent(outX,outY) ||
+      (stickX==0 && stickY==0)) return result;
+  const char *map=reinterpret_cast<const char*>(gameBase+0x527110);
+  // Use the latest built simulation pose, including the preceding tick when
+  // movement runs before the next camera build. Reject resource/scene switches.
+  if(strncmp(map,orbitMapName,sizeof(orbitMapName)) ||
+      orbitMapName[0]==0 ||
+      memcmp(reinterpret_cast<void*>(gameBase+0x1cf17a0),orbitRenderPose.nativeEye.v,16) ||
+      memcmp(reinterpret_cast<void*>(gameBase+0x198f690),orbitRenderPose.nativeTarget.v,16) ||
+      memcmp(reinterpret_cast<void*>(gameBase+0x9a9b00),orbitRenderPose.view,64))
+    return result;
+  float x,y;
+  if(!gurumin::cameraRelativeMovement(orbitRenderPose.eye.v,
+      orbitRenderPose.target.v,stickX,stickY,x,y)) return result;
+  *outX=x; *outY=y;
+  if(diagnostics) {
+    static unsigned traced;
+    if(traced++<12 || frames%600==0)
+      log("Camera-relative movement scene=%d poseTick=%u tick=%u stick=%g,%g world=%g,%g",
+          orbitRenderPose.scene,orbitRenderPose.tick,game<unsigned>(0x1de47f4),
+          stickX,stickY,x,y);
+  }
+  return result;
+}
 static void __fastcall cameraPitchHook(float *vector, void *,
                                        float nativeAngle) {
   uintptr_t caller = uintptr_t(__builtin_return_address(0)) - gameBase;
@@ -306,20 +352,23 @@ static void installCameraHooks() {
                      reinterpret_cast<void *>(gameBase + 0x312f90),
                      reinterpret_cast<void *>(gameBase + 0x379200),
                      reinterpret_cast<void *>(gameBase + 0x37aea0),
-                     reinterpret_cast<void *>(gameBase + 0x1d3360)};
+                     reinterpret_cast<void *>(gameBase + 0x1d3360),
+                     reinterpret_cast<void *>(gameBase + 0x32cb60)};
   void *detours[] = {reinterpret_cast<void *>(cameraInputHook),
                      reinterpret_cast<void *>(cameraUpdateHook),
                      reinterpret_cast<void *>(cameraPitchHook),
                      reinterpret_cast<void *>(cameraViewHook),
-                     reinterpret_cast<void *>(cameraWorldHook)};
+                     reinterpret_cast<void *>(cameraWorldHook),
+                     reinterpret_cast<void *>(cameraMovementHook)};
   void **originals[] = {reinterpret_cast<void **>(&nativeInput),
                         reinterpret_cast<void **>(&nativeCamera),
                         reinterpret_cast<void **>(&nativePitch),
                         reinterpret_cast<void **>(&nativeCameraView),
-                        reinterpret_cast<void **>(&nativeCameraWorld)};
+                        reinterpret_cast<void **>(&nativeCameraWorld),
+                        reinterpret_cast<void **>(&nativeCameraMovement)};
   unsigned created = 0;
   bool ok = true;
-  for (unsigned i = 0; i < 5; ++i) {
+  for (unsigned i = 0; i < sizeof(targets)/sizeof(targets[0]); ++i) {
     auto status = MH_CreateHook(targets[i], detours[i], originals[i]);
     log("Optional camera hook RVA=%lx status=%d",
         (unsigned long)(uintptr_t(targets[i]) - gameBase), status);

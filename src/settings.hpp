@@ -46,16 +46,15 @@ inline std::vector<Resolution> resolutionChoices(Resolution desktop,
 struct ModernSettings {
   Resolution resolution{0, 0}; // Absent keys preserve native/installed choice.
   int frameCap = 0; // 0: native VSync; -1: uncapped; 30..1000: numeric.
-  bool freeCamera = false, cameraInteriorsOnly = false;
+  bool freeCamera = false, cameraOutOfTownOnly = true;
   bool invertX = true, invertY = false;
   int cameraYawSpeed = 120, cameraPitchSpeed = 90, cameraDeadzone = 8689;
   int shadowResolution = 256;
   int antiAliasing = 0; // Native, FXAA Low, FXAA High.
   bool uiFiltering = true, worldFiltering = true;
 };
-// The native camera mode is not an indoor flag. Match the current map ID
-// and asset together against the decoded room/shop records; ambiguous areas
-// remain native when interiors-only is selected.
+// Room/shop identity remains useful for indoor collision, independently of
+// the town-only freecam exclusion. Native camera mode is not an indoor flag.
 inline bool cameraInterior(int scene, const char *asset, std::size_t capacity) {
   if (scene < 2 || scene > 5 || !asset) return false;
   std::size_t length=0;
@@ -69,6 +68,20 @@ inline bool cameraInterior(int scene, const char *asset, std::size_t capacity) {
     const char *extension=".it3";
     for(std::size_t i=0;i<4;++i)
       if(lower(asset[6+i])!=extension[i]) return false;
+  }
+  return true;
+}
+// The decoded town record is scene 0x0c, not every outdoor/fixed camera.
+inline bool cameraTown(int scene, const char *asset, std::size_t capacity) {
+  if(scene!=12 || !asset) return false;
+  std::size_t length=0;
+  while(length<capacity && asset[length]) ++length;
+  if(length==capacity || (length!=6 && length!=10)) return false;
+  const char *name="mp_0c0.it3";
+  for(std::size_t i=0;i<length;++i) {
+    char c=asset[i];
+    if(c>='A' && c<='Z') c=char(c-'A'+'a');
+    if(c!=name[i]) return false;
   }
   return true;
 }
@@ -120,6 +133,22 @@ inline Stick radialStick(int x, int y, int deadzone) {
     return {};
   float gain = (std::min(length, 1.f) - dz) / ((1.f - dz) * length);
   return {fx * gain, fy * gain};
+}
+// Native movement converter uses X/Y as the ground plane. The visible
+// horizontal forward vector defines direction, independent of camera pitch.
+inline bool cameraRelativeMovement(const float *eye, const float *target,
+                                   float x, float y, float &outX, float &outY) {
+  if(!eye || !target || !std::isfinite(x) || !std::isfinite(y)) return false;
+  for(int i=0;i<3;++i)
+    if(!std::isfinite(eye[i]) || !std::isfinite(target[i])) return false;
+  double fx=double(target[0])-eye[0], fy=double(target[1])-eye[1];
+  double length=std::hypot(fx,fy);
+  if(length<.001) return false;
+  fx/=length; fy/=length;
+  float nx=float(fy*x+fx*y), ny=float(-fx*x+fy*y);
+  if(!std::isfinite(nx) || !std::isfinite(ny)) return false;
+  outX=nx; outY=ny;
+  return true;
 }
 // Native yaw rotates X/Y, with Z untouched. Keep the target and radius intact.
 inline bool orbitYaw(float *eye, const float *target, float radians) {

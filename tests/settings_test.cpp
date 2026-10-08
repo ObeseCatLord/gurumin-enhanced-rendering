@@ -72,8 +72,34 @@ int main() {
   assert(!cameraInterior(2,"mp_020x",8));
   assert(!cameraInterior(2,"mp_020",6));
   assert(!cameraInterior(2,nullptr,0));
+  assert(cameraTown(12,"mp_0C0",7));
+  assert(cameraTown(12,"MP_0c0.IT3",11));
+  assert(!cameraTown(2,"mp_020",7));
+  assert(!cameraTown(102,"mp_102",7));
+  assert(!cameraTown(12,"mp_0C0b",8));
+  assert(!cameraTown(12,"mp_0C0",6));
+  assert(!cameraTown(12,nullptr,0));
+  assert(!cameraTown(13,"mp_0C0",7));
   ModernSettings settings;
-  assert(!settings.freeCamera && !settings.cameraInteriorsOnly && settings.invertX);
+  assert(!settings.freeCamera && settings.cameraOutOfTownOnly && settings.invertX);
+  // Ground movement follows the displayed view, with unchanged stick length.
+  for(float yaw:{0.f,.3f,1.570796327f,3.141592654f,-1.570796327f}) {
+    float eye[]={0,-100,40,1}, target[]={0,0,0,1};
+    assert(orbitFromAnchor(eye,target,yaw,0));
+    for(Stick input:{Stick{0,1},Stick{1,0},Stick{.6f,.8f},Stick{0,0}}) {
+      float x=99,y=99;
+      assert(cameraRelativeMovement(eye,target,input.x,input.y,x,y));
+      assert(std::abs(std::hypot(x,y)-std::hypot(input.x,input.y))<1e-5f);
+      assert(std::abs(x-(input.x*std::cos(yaw)-input.y*std::sin(yaw)))<1e-5f);
+      assert(std::abs(y-(input.x*std::sin(yaw)+input.y*std::cos(yaw)))<1e-5f);
+    }
+  }
+  float highEye[]={0,-1,10000,1}, origin[]={0,0,0,1}, moveX=9,moveY=8;
+  assert(cameraRelativeMovement(highEye,origin,.6f,.8f,moveX,moveY));
+  assert(moveX==.6f && moveY==.8f); // High pitch never slows horizontal input.
+  assert(!cameraRelativeMovement(origin,origin,1,0,moveX,moveY));
+  assert(moveX==.6f && moveY==.8f);
+  assert(!cameraRelativeMovement(highEye,origin,NAN,0,moveX,moveY));
   settings.invertX=false; // Baseline rotation math is independent of defaults.
   OrbitControls orbit;
   assert(orbit.advance(10, {1, 1}, settings) == 0);

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Replace Interiors only with Out of town only, enabled by default, excluding
+  just the main town exterior while allowing freecam in rooms and dungeons.
+- Align fixed-camera freecam movement with the visible camera direction while
+  retaining authored anchor following and native movement timing.
+
 ## 1.0.3 — 2026-10-08
 
 - Extend the native Filtering dropdown through 16× anisotropy, retaining its
