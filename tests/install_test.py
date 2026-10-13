@@ -81,6 +81,32 @@ class InstallTest(unittest.TestCase):
   for name,data in self.original.items():
    self.assertEqual((self.game/name).read_bytes(),data)
 
+ def test_vr_payload_install_adoption_and_restore(self):
+  self.run_install()
+  manifest = self.game / 'GuruminModern-backup' / 'manifest.json'
+  for name in installer.PAYLOAD[1:]:
+   self.assertEqual((self.game/name).read_bytes(), (ROOT/'dist'/name).read_bytes())
+   self.assertIn(name, json.loads(manifest.read_text())['files'])
+  # A release folder copied over an older managed install adds identical VR
+  # files the manifest does not own yet: adopt them, refuse anything else.
+  host = installer.PAYLOAD[1]
+  data = json.loads(manifest.read_text())
+  data['files'].pop(host)
+  manifest.write_text(json.dumps(data))
+  self.run_install()
+  self.assertIn(host, json.loads(manifest.read_text())['files'])
+  data = json.loads(manifest.read_text())
+  data['files'].pop(host)
+  manifest.write_text(json.dumps(data))
+  (self.game/host).write_bytes(b'not the release host')
+  with self.assertRaisesRegex(SystemExit, 'unowned file already exists'):
+   self.run_install()
+  (self.game/host).unlink()
+  self.run_install()
+  installer.restore(self.game)
+  for name in installer.PAYLOAD:
+   self.assertFalse((self.game/name).exists())
+
  def test_license_notice_owned_migration_and_unowned_refusal(self):
   self.run_install()
   notice = self.game / installer.NOTICE

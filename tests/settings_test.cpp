@@ -162,4 +162,13 @@ int main() {
   for(int edge : {256,512,1024,2048}) assert(validShadowResolution(edge));
   assert(!validShadowResolution(0) && !validShadowResolution(777));
   assert(validAntiAliasing(0) && validAntiAliasing(2) && !validAntiAliasing(3));
+  ModernSettings defaults;
+  assert(!defaults.vrEnabled && defaults.vrScale == 0);
+  assert(validVrScale(0) && validVrScale(1) && !validVrScale(2));
+  assert(commandLineRequestsVr("game.exe -vr"));
+  assert(commandLineRequestsVr("\"C:\\Games\\Gurumin A\\game.exe\" -VR -foo"));
+  assert(commandLineRequestsVr("game.exe\t--vr"));
+  assert(!commandLineRequestsVr("\"C:\\x -vr\\game.exe\" -foo"));
+  assert(!commandLineRequestsVr("game.exe -vrx"));
+  assert(!commandLineRequestsVr(nullptr) && !commandLineRequestsVr(""));
 }

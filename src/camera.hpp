@@ -47,7 +47,8 @@ static bool fixedGameplayOrbit() {
          game<int>(0x1264fd0) == 0;
 }
 static bool orbitCameraOwned() {
-  if (!supported || !cameraHooksActive || !modernSettings.freeCamera)
+  // The VR rig replaces the desktop free camera for the whole session.
+  if (!supported || !cameraHooksActive || !modernSettings.freeCamera || vrSession)
     return false;
   if (diagnostics) {
     static unsigned nextTrace;
@@ -88,6 +89,7 @@ static void resetCameraControls(bool discardPitch = false) {
 }
 static void __cdecl cameraInputHook(int *state) {
   nativeInput(state);
+  vrInputOverlay(state);
   cameraSample.valid = false;
   if (!cameraEligible() || !game<int>(0x1e280d4))
     return;
@@ -274,6 +276,8 @@ static float *__cdecl cameraViewHook(float *out,CameraVector eye,
   return result;
 }
 static void __cdecl cameraWorldHook() {
+  // Scene root: VR renders its eye views here when a session is live.
+  if(vrSceneRoot(nativeCameraWorld)) return;
   auto eye=reinterpret_cast<float*>(gameBase+0x1cf17a0);
   auto target=reinterpret_cast<float*>(gameBase+0x198f690);
   bool use=orbitRenderPose.built && orbitCameraOwned() &&
@@ -307,6 +311,7 @@ static unsigned __cdecl cameraMovementHook(float *outX,float *outY,
   // Run native anchor bookkeeping, input recording and carry updates first.
   // Replace its blended direction only for an established freecam pose.
   unsigned result=nativeCameraMovement(outX,outY,stickX,stickY);
+  if(vrMovement(caller,stickX,stickY,outX,outY)) return result;
   if(caller!=0x21d499 || !orbitCameraOwned() ||
       game<int>(0x515ec4) || !game<int>(0x791ec0) || !fixedGameplayOrbit() ||
       !fixedOrbitEngaged || orbitCameraKind!=1 || !orbitRenderPose.built ||
@@ -346,7 +351,7 @@ static void __fastcall cameraPitchHook(float *vector, void *,
   nativePitch(vector, nativeAngle);
 }
 static void installCameraHooks() {
-  if (!supported || !modernSettings.freeCamera || cameraHooksActive)
+  if (!supported || !(modernSettings.freeCamera || vrSession) || cameraHooksActive)
     return;
   void *targets[] = {reinterpret_cast<void *>(gameBase + 0x3ae330),
                      reinterpret_cast<void *>(gameBase + 0x312f90),
@@ -397,5 +402,6 @@ static void installCameraHooks() {
   orbitScene = game<int>(0xf32c78);
   establishedOrbit = false;
   resetCameraControls(true);
-  log("Steam Input right-stick orbit enabled");
+  log(vrSession ? "Camera/input hooks enabled for VR"
+                : "Steam Input right-stick orbit enabled");
 }

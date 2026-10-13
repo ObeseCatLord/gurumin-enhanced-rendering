@@ -52,7 +52,43 @@ struct ModernSettings {
   int shadowResolution = 256;
   int antiAliasing = 0; // Native, FXAA Low, FXAA High.
   bool uiFiltering = true, worldFiltering = true;
+  bool vrEnabled = false;
+  int vrScale = 0; // 0 life size, 1 diorama.
 };
+inline bool validVrScale(int scale) { return scale == 0 || scale == 1; }
+// "-vr" on the command line enables VR for one launch without saving it.
+inline bool commandLineRequestsVr(const char *line) {
+  if (!line)
+    return false;
+  bool quoted = false;
+  const char *token = nullptr;
+  for (const char *p = line;; ++p) {
+    char c = *p;
+    bool separator = c == 0 || ((c == ' ' || c == '\t') && !quoted);
+    if (c == '"')
+      quoted = !quoted;
+    if (separator) {
+      if (token) {
+        std::size_t length = std::size_t(p - token);
+        auto lower = [](char x) { return x >= 'A' && x <= 'Z' ? char(x - 'A' + 'a') : x; };
+        auto is = [&](const char *word) {
+          std::size_t n = 0;
+          while (word[n]) ++n;
+          if (n != length) return false;
+          for (std::size_t i = 0; i < n; ++i)
+            if (lower(token[i]) != word[i]) return false;
+          return true;
+        };
+        if (is("-vr") || is("--vr") || is("/vr"))
+          return true;
+        token = nullptr;
+      }
+      if (!c)
+        return false;
+    } else if (!token)
+      token = p;
+  }
+}
 // Room/shop identity remains useful for indoor collision, independently of
 // the town-only freecam exclusion. Native camera mode is not an indoor flag.
 inline bool cameraInterior(int scene, const char *asset, std::size_t capacity) {

@@ -33,7 +33,9 @@ def main():
     files=['README.md','LICENSE','VERSION','CHANGELOG.md','THIRD_PARTY_NOTICES.md',
            'tools/install.py','tools/steam.py','tools/steam_launch.py','tools/patch.py',
            'dist/d3d9.dll','dist/GuruminModern.ini','dist/GuruminModern-FXAA-LICENSE.txt',
-           'vendor/minhook/LICENSE.txt','vendor/fxaa/LICENSE.txt']
+           'dist/GuruminVR/gurumin_vr_host.exe','dist/GuruminVR/openxr_loader.dll',
+           'dist/GuruminVR/OpenXR-LICENSE.txt',
+           'vendor/minhook/LICENSE.txt','vendor/fxaa/LICENSE.txt','vendor/openxr/LICENSE']
     for name in files:
         source=ROOT/name;target=folder/name;target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(source,target)
@@ -61,7 +63,9 @@ def main():
         shutil.move(str(folder/name),str(optional/name))
     optional_hashes={str(p.relative_to(optional)):sha(p) for p in sorted(optional.rglob('*')) if p.is_file() and p.name!='payload.json'}
     (optional/'payload.json').write_text(json.dumps({'project':'Gurumin Enhanced Rendering','version':VERSION,'sha256':optional_hashes},indent=2)+'\n')
-    for name in ('d3d9.dll','GuruminModern-FXAA-LICENSE.txt'):
+    for name in ('d3d9.dll','GuruminModern-FXAA-LICENSE.txt','GuruminVR/gurumin_vr_host.exe',
+                 'GuruminVR/openxr_loader.dll','GuruminVR/OpenXR-LICENSE.txt'):
+        (folder/name).parent.mkdir(exist_ok=True)
         shutil.copy2(optional/'dist'/name,folder/name)
     # The runtime provides defaults and writes preferences from its launcher.
     # Omitting a live INI keeps extraction updates from resetting preferences.

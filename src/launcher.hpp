@@ -53,6 +53,10 @@ static void loadModernSettings() {
     modernSettings.antiAliasing = aa;
   modernSettings.uiFiltering = read("UIFiltering", 1) != 0;
   modernSettings.worldFiltering = read("WorldFiltering", 1) != 0;
+  modernSettings.vrEnabled = read("VREnabled", 0) != 0;
+  int vrScale = read("VRScale", 0);
+  if (gurumin::validVrScale(vrScale))
+    modernSettings.vrScale = vrScale;
 }
 static bool saveModernSettings(const gurumin::ModernSettings &s) {
   if (!modernIniPath())
@@ -88,6 +92,8 @@ static bool saveModernSettings(const gurumin::ModernSettings &s) {
   write("AntiAliasing", s.antiAliasing);
   write("UIFiltering", s.uiFiltering);
   write("WorldFiltering", s.worldFiltering);
+  write("VREnabled", s.vrEnabled);
+  write("VRScale", s.vrScale);
   // Keep unrelated settings, comments and advanced controller preferences.
   if (ok) {
     // The profile-cache flush returns zero even on success (Win32 contract).
@@ -118,7 +124,8 @@ using EndDialogFn = BOOL(WINAPI *)(HWND, INT_PTR);
 static CreateDialogFn originalCreateDialog;
 static EndDialogFn originalEndDialog;
 static HWND launcherWindow, graphicsPage, resolutionCombo, capCombo,
-    freeCameraCheck, outOfTownOnlyCheck, invertXCheck, invertYCheck;
+    freeCameraCheck, outOfTownOnlyCheck, invertXCheck, invertYCheck, vrCheck,
+    vrScaleCombo;
 static WNDPROC launcherProc;
 static WNDPROC graphicsProc;
 static std::vector<gurumin::Resolution> launcherModes;
@@ -215,6 +222,10 @@ static LRESULT CALLBACK modernGraphicsProc(HWND window, UINT message,
      HIWORD(wParam)==BN_CLICKED)
     EnableWindow(outOfTownOnlyCheck,
         SendMessageA(freeCameraCheck,BM_GETCHECK,0,0)==BST_CHECKED);
+  if(message==WM_COMMAND && LOWORD(wParam)==6009 &&
+     HIWORD(wParam)==BN_CLICKED)
+    EnableWindow(vrScaleCombo,
+        SendMessageA(vrCheck,BM_GETCHECK,0,0)==BST_CHECKED);
   if(message==WM_COMMAND && LOWORD(wParam)==6007 &&
      HIWORD(wParam)==BN_CLICKED) { openMoreGraphics(); return 0; }
   return CallWindowProcA(graphicsProc,window,message,wParam,lParam);
@@ -292,9 +303,10 @@ static BOOL WINAPI launcherEndDialog(HWND window, INT_PTR result) {
     pendingAcceptance = false;
     modernSettings = launcherDraft;
     bool saved = saveModernSettings(modernSettings);
-    log("Launcher accepted resolution=%dx%d cap=%d freeCamera=%d saved=%d",
+    log("Launcher accepted resolution=%dx%d cap=%d freeCamera=%d vr=%d vrScale=%d saved=%d",
         modernSettings.resolution.width, modernSettings.resolution.height,
-        modernSettings.frameCap, modernSettings.freeCamera, saved);
+        modernSettings.frameCap, modernSettings.freeCamera,
+        modernSettings.vrEnabled, modernSettings.vrScale, saved);
     if (!saved)
       MessageBoxA(nullptr,
                   "The modern settings could not be saved. Check that the game "
@@ -323,6 +335,10 @@ static LRESULT CALLBACK modernLauncherProc(HWND window, UINT message,
         SendMessageA(invertXCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     launcherDraft.invertY =
         SendMessageA(invertYCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    launcherDraft.vrEnabled =
+        SendMessageA(vrCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    LRESULT vrScaleIndex = SendMessageA(vrScaleCombo, CB_GETCURSEL, 0, 0);
+    launcherDraft.vrScale = vrScaleIndex == 1 ? 1 : 0;
     pendingAcceptance = true;
     acceptedSettings = false;
     int oldNative = game<int>(0x1213568);
@@ -352,6 +368,9 @@ static LRESULT CALLBACK modernLauncherProc(HWND window, UINT message,
     EnableWindow(outOfTownOnlyCheck, FALSE);
     SendMessageA(invertXCheck, BM_SETCHECK, BST_CHECKED, 0);
     SendMessageA(invertYCheck, BM_SETCHECK, BST_UNCHECKED, 0);
+    SendMessageA(vrCheck, BM_SETCHECK, BST_UNCHECKED, 0);
+    SendMessageA(vrScaleCombo, CB_SETCURSEL, 0, 0);
+    EnableWindow(vrScaleCombo, FALSE);
   }
   if (message == WM_NCDESTROY)
     launcherWindow = nullptr;
@@ -441,13 +460,14 @@ static void customizeLauncher(HWND window) {
     SetWindowPos(resolutionCombo, nullptr, 0, 0, r.right - r.left,
                  originalDrop.bottom - originalDrop.top,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    for (int id = 6000; id <= 6008; ++id)
+    for (int id = 6000; id <= 6010; ++id)
       if (HWND control = GetDlgItem(graphicsPage, id))
         DestroyWindow(control);
     MoveWindow(GetDlgItem(graphicsPage, 1069), originalAudio.left,
                originalAudio.top, originalAudio.right - originalAudio.left,
                originalAudio.bottom - originalAudio.top, TRUE);
-    capCombo = freeCameraCheck = outOfTownOnlyCheck = invertXCheck = invertYCheck = nullptr;
+    capCombo = freeCameraCheck = outOfTownOnlyCheck = invertXCheck = invertYCheck =
+        vrCheck = vrScaleCombo = nullptr;
   };
   static const gurumin::Resolution stock[] = {{800, 600},   {1024, 600},
                                               {1280, 720},  {1280, 960},
@@ -490,8 +510,8 @@ static void customizeLauncher(HWND window) {
   RECT audio = dialogRect(graphicsPage, 263, 18, 203, 108);
   MoveWindow(GetDlgItem(graphicsPage, 1069), audio.left, audio.top,
              audio.right - audio.left, audio.bottom - audio.top, TRUE);
-  modernControl("BUTTON", "Display / Camera", BS_GROUPBOX, 6000, 263, 132, 203,
-                107, font);
+  modernControl("BUTTON", "Display / Camera / VR", BS_GROUPBOX, 6000, 263, 132, 203,
+                129, font);
   modernControl("STATIC", "Frame cap", 0, 6004, 276, 150, 60, 10, font);
   capCombo =
       modernControl("COMBOBOX", "", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
@@ -507,9 +527,14 @@ static void customizeLauncher(HWND window) {
   invertYCheck =
       modernControl("BUTTON", "Invert camera Y", WS_TABSTOP | BS_AUTOCHECKBOX,
                     6003, 370, 191, 84, 12, font);
+  vrCheck = modernControl("BUTTON", "VR (OpenXR)", WS_TABSTOP | BS_AUTOCHECKBOX,
+                          6009, 276, 212, 84, 12, font);
+  vrScaleCombo = modernControl("COMBOBOX", "",
+      WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST, 6010, 362, 210, 92, 60, font);
   HWND more = modernControl("BUTTON", "More graphics settings...",
-                WS_TABSTOP,6007,276,211,178,18,font);
-  if (!capCombo || !freeCameraCheck || !outOfTownOnlyCheck || !invertXCheck || !invertYCheck || !more) {
+                WS_TABSTOP,6007,276,233,178,18,font);
+  if (!capCombo || !freeCameraCheck || !outOfTownOnlyCheck || !invertXCheck ||
+      !invertYCheck || !vrCheck || !vrScaleCombo || !more) {
     log("Launcher modern controls could not be created");
     rollback();
     return;
@@ -546,6 +571,14 @@ static void customizeLauncher(HWND window) {
                modernSettings.invertX ? BST_CHECKED : BST_UNCHECKED, 0);
   SendMessageA(invertYCheck, BM_SETCHECK,
                modernSettings.invertY ? BST_CHECKED : BST_UNCHECKED, 0);
+  SendMessageA(vrScaleCombo, CB_ADDSTRING, 0,
+               reinterpret_cast<LPARAM>("Life size scale"));
+  SendMessageA(vrScaleCombo, CB_ADDSTRING, 0,
+               reinterpret_cast<LPARAM>("Diorama scale"));
+  SendMessageA(vrScaleCombo, CB_SETCURSEL, modernSettings.vrScale, 0);
+  SendMessageA(vrCheck, BM_SETCHECK,
+               modernSettings.vrEnabled ? BST_CHECKED : BST_UNCHECKED, 0);
+  EnableWindow(vrScaleCombo, modernSettings.vrEnabled);
   launcherProc =
       reinterpret_cast<WNDPROC>(GetWindowLongPtrA(window, GWLP_WNDPROC));
   SetLastError(0);

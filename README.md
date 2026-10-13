@@ -27,6 +27,9 @@ I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which 
 - Right stick free camera as an option. The game isn't made with it in mind, can look weird in town
 - Higher Resolution Shadows
 - FXAA
+- **Optional 6DoF VR (OpenXR)**: third-person VR with a camera rig that follows
+  Parin, life-size or diorama (tabletop) scale, gamepad or VR controllers.
+  Works on Windows and on Linux through Proton with Monado/WiVRn or SteamVR.
 
 ## Install — copy into the game folder
 
@@ -68,6 +71,45 @@ Requests are limited to the GPU's supported maximum. Set **World textures** to
 **Native filtering** to use it; **Nearest (pixelated)** overrides filtering for
 the selected texture category.
 
+
+## VR mode
+
+Tick **VR (OpenXR)** in the launcher's *Display / Camera / VR* group, or start the
+game with `-vr` (e.g. in Steam's launch options after `%command%`) to use VR for
+that launch only. Pick **Life size scale** (stand in the world behind Parin) or
+**Diorama scale** (the level as a tabletop model in front of you). VR is off by
+default and nothing VR-related runs when it is off.
+
+Start your OpenXR runtime (SteamVR, or Monado/WiVRn e.g. via Envision) before or
+after the game; the mod launches its small OpenXR host
+(`GuruminVR\gurumin_vr_host.exe`) and reconnects if the runtime starts later.
+
+| Action | Gamepad | VR controllers |
+|---|---|---|
+| Move Parin (relative to where you look) | Left stick | Left stick |
+| Turn the camera rig around Parin | Right stick left/right | Right stick left/right |
+| Raise / lower the rig | Right stick up/down | Right stick up/down |
+| Recenter | Click both sticks | Click both sticks |
+| Game buttons | As configured in the launcher | A/B/X/Y, grips = LB/RB, triggers = LT/RT, left menu = Start, right menu = Back |
+
+The HUD floats in front of you and follows your head with a soft, trailing lag;
+menus, the title and loading screens appear on a larger virtual screen.
+Both eyes are rendered in a single pass of the game's scene. Advanced options
+(scale, rig distance/height, snap turning, render scale, HUD size) are listed in
+`GuruminModern.ini`.
+
+Linux / Proton notes:
+- Use DXVK (the Proton default); Proton's OpenXR bridge needs it.
+- For Monado/WiVRn add `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1` before
+  `%command%`, e.g.
+  `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 WINEDLLOVERRIDES="d3d9=n,b" %command%`.
+- Eye images go to the runtime without a CPU copy under Proton. Native Windows
+  D3D9 cannot share them, so Windows uses a slower CPU copy (lower the
+  per-eye `VRRenderScale` if frame rate suffers).
+
+VR limitations: water reflections are rendered from the flat camera; screen fades
+darken the HUD panel rather than the whole view; very tight rooms may bring the
+life-size rig close to Parin (it rises over walls first, then moves closer).
 
 ## Compatibility and limitations
 
@@ -120,7 +162,7 @@ review dispositions and `MODLOG.md` for reverse-engineering and validation notes
 
 Created by **ObeseCatLord**.
 Implementation and reverse-engineering assistance: OpenAI Codex; design reviews: Astra.
-Original mod code is MIT licensed. MinHook and NVIDIA FXAA retain their respective
-licenses; the bundled Windows Python runtime retains the PSF license. See
+Original mod code is MIT licensed. MinHook, NVIDIA FXAA and the Khronos OpenXR
+loader/headers retain their respective licenses; the bundled Windows Python runtime retains the PSF license. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No generated art/audio is used.
 Gurumin and its game assets belong to their respective owners.

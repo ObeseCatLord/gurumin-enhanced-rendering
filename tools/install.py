@@ -19,6 +19,10 @@ TEXTURE_HEIGHT_LIMIT = 0x31b832
 CORE_FILES = ('game.exe', 'gurumin.exe', 'd3d9.dll')
 INI = 'GuruminModern.ini'
 NOTICE = 'GuruminModern-FXAA-LICENSE.txt'
+# Optional mod-owned payload: new files beside the game, copied verbatim from
+# dist/ and removed again on restore. The VR host runs only when VR is enabled.
+PAYLOAD = (NOTICE, 'GuruminVR/gurumin_vr_host.exe', 'GuruminVR/openxr_loader.dll',
+           'GuruminVR/OpenXR-LICENSE.txt')
 
 
 def sha(b):
@@ -53,7 +57,7 @@ def load_manifest(manifest):
    entry = files[name]
    if not isinstance(entry['existed'], bool) or not isinstance(entry['installed_sha256'], str):
     raise ValueError(f'{name} has invalid fields')
-  for name in (INI, NOTICE):
+  for name in (INI,) + PAYLOAD:
    if name in files:
     entry = files[name]
     if not isinstance(entry['existed'], bool) or not isinstance(entry['installed_sha256'], str):
@@ -96,7 +100,7 @@ def installed_files_match(root, manifest, names=None, originals=None):
    if entry['existed'] and current == originals.get(name):
     continue
   if current is None or sha(current) != entry['installed_sha256']:
-   if name in ('d3d9.dll', NOTICE):
+   if name in ('d3d9.dll',) + PAYLOAD:
     bundled = Path(__file__).resolve().parents[1] / 'dist' / name
     if bundled.exists() and current == bundled.read_bytes():
      continue  # Exact release payload copied over an older managed install.
@@ -105,8 +109,12 @@ def installed_files_match(root, manifest, names=None, originals=None):
    raise SystemExit(f'{name} changed since installation; refusing to overwrite')
 
 
+def owned_payload(manifest):
+ return tuple(name for name in PAYLOAD if name in manifest['files'])
+
+
 def managed_files(manifest):
- return CORE_FILES + tuple(name for name in (INI, NOTICE) if name in manifest['files'])
+ return CORE_FILES + tuple(name for name in (INI,) if name in manifest['files']) + owned_payload(manifest)
 
 
 def status(root):
@@ -121,7 +129,7 @@ def status(root):
    print(f'manifest: error: {exc}')
  else:
   print('manifest: missing')
- names = CORE_FILES + tuple(name for name in (INI, NOTICE)
+ names = CORE_FILES + tuple(name for name in (INI,) + PAYLOAD
      if (root / name).exists() or (manifest and name in manifest['files']))
  for name in names:
   path = root / name
@@ -153,7 +161,7 @@ def restore(root):
  if not manifest_path.exists():
   raise SystemExit('No installation manifest; refusing restore')
  manifest = load_manifest(manifest_path)
- core_names = CORE_FILES + ((NOTICE,) if NOTICE in manifest['files'] else ())
+ core_names = CORE_FILES + owned_payload(manifest)
  restore_names = list(core_names)
  config_preserved = False
  if INI in manifest['files']:
@@ -229,20 +237,27 @@ def install(root, width, height, writer=write):
    candidates[INI] = template.read_bytes().replace(b'Width=0', f'Width={width}'.encode()).replace(b'Height=0', f'Height={height}'.encode())
   except OSError as exc:
    raise SystemExit(f'{INI}: cannot read installer template: {exc}')
- notice = Path(__file__).resolve().parents[1] / 'dist' / NOTICE
- if notice.exists():
-  candidates[NOTICE] = notice.read_bytes()
+ for name in PAYLOAD:
+  bundled = Path(__file__).resolve().parents[1] / 'dist' / name
+  if bundled.exists():
+   try:
+    candidates[name] = bundled.read_bytes()
+   except OSError as exc:
+    raise SystemExit(f'{name}: cannot read installer payload: {exc}')
  names = tuple(candidates)
  for name in names:
   path = root / name
   before[name] = path.read_bytes() if path.exists() else None
  if manifest:
-  known_names = CORE_FILES + ((NOTICE,) if NOTICE in manifest['files'] else ())
+  known_names = CORE_FILES + owned_payload(manifest)
   installed_files_match(root, manifest, known_names, verify_backups(backup, manifest, known_names))
-  if NOTICE in candidates and NOTICE not in manifest['files']:
-   if before[NOTICE] is not None:
-    raise SystemExit(f'{NOTICE}: unowned file already exists; refusing install')
-   manifest['files'][NOTICE] = {'existed': False}
+  for name in PAYLOAD:
+   if name in candidates and name not in manifest['files']:
+    # VR files from a copied release folder are adopted when byte-identical;
+    # the established notice and anything else unowned is refused.
+    if before[name] is not None and (name == NOTICE or before[name] != candidates[name]):
+     raise SystemExit(f'{name}: unowned file already exists; refusing install')
+    manifest['files'][name] = {'existed': False}
   if INI in candidates and INI not in manifest['files']:
    if before[INI] is not None:
     raise SystemExit(f'{INI}: unowned file already exists; refusing install')
@@ -258,15 +273,16 @@ def install(root, width, height, writer=write):
   extracted = before['d3d9.dll'] == candidates['d3d9.dll']
   if before['d3d9.dll'] is not None and not extracted:
    raise SystemExit('A D3D9 DLL already exists; resolve that conflict first')
-  if NOTICE in before and before[NOTICE] is not None and not (extracted and before[NOTICE] == candidates[NOTICE]):
-   raise SystemExit(f'{NOTICE}: unowned file already exists; refusing install')
+  for name in PAYLOAD:
+   if name in before and before[name] is not None and not (extracted and before[name] == candidates[name]):
+    raise SystemExit(f'{name}: unowned file already exists; refusing install')
   if INI in before and before[INI] is not None:
    if not extracted:
     raise SystemExit(f'{INI}: unowned file already exists; refusing install')
    candidates[INI] = before[INI]  # Preserve settings saved after a manual install.
   manifest = {'files': {}}
   for name in names:
-   existed = before[name] is not None and not (extracted and name in ('d3d9.dll', NOTICE))
+   existed = before[name] is not None and not (extracted and name in ('d3d9.dll',) + PAYLOAD)
    entry = {'existed': existed}
    if existed:
     entry['backup_sha256'] = sha(before[name])
@@ -289,6 +305,7 @@ def install(root, width, height, writer=write):
   # recovered using this same manifest and the verified original backups.
   writer(manifest_path, recovery_manifest)
   for name, data in candidates.items():
+   (root / name).parent.mkdir(exist_ok=True)
    writer(root / name, data)
   manifest['state'] = 'installed'
   # Keep the last verified owned hashes too: an interrupted final commit plus

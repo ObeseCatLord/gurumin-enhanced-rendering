@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0 — 2026-10-13
+
+- Optional 6DoF OpenXR VR mode (default off; launcher toggle or `-vr`):
+  third-person camera rig that follows Parin, Life size or Diorama scale,
+  smooth right-stick orbit and rig height, head-relative left-stick movement,
+  gamepad and VR controllers (Touch, Index, Vive, WMR, simple), recenter by
+  clicking both sticks.
+- Single-pass stereo: one scene traversal, each eye-dependent draw issued per
+  eye region of a side-by-side target; eye-aware culling and all map zones drawn.
+- HUD on a soft head-following panel; title, menus and loading on a virtual screen.
+- x64 OpenXR host (`GuruminVR/`) started by the game on Windows and Proton;
+  zero-copy DXVK shared images under Proton, CPU copy on native Windows; host
+  restarts automatically if the runtime starts later or stops.
+- Life-size rig collision using the game's camera collision (rises over walls).
+- Optional installer manages the `GuruminVR` files and adopts a copied release.
+
 ## 1.0.4 — 2026-10-08
 
 - Replace Interiors only with Out of town only, enabled by default, excluding

@@ -132,6 +132,7 @@ static HRESULT WINAPI samplerHook(IDirect3DDevice9 *d, DWORD stage,
 static int hudDepth, worldDepth, cursorDepth;
 static int projectedGeometryDepth;
 static D3DVIEWPORT9 actualViewport{};
+#include "vr_state.hpp"
 #include "shadows.hpp"
 static bool hudSeen;
 static unsigned lastHudFrame;
@@ -188,10 +189,9 @@ using ShaderDrawFn = unsigned(__thiscall *)(void *, const float *,
                                             const float *, unsigned, unsigned,
                                             const void *, const void *);
 static ShaderDrawFn shaderDraw;
-static unsigned __fastcall shaderDrawHook(void *obj, void *, const float *model,
-                                          const float *view, unsigned mode,
-                                          unsigned a, const void *b,
-                                          const void *c) {
+static unsigned shaderDrawOnce(void *obj, const float *model, const float *view,
+                               unsigned mode, unsigned a, const void *b,
+                               const void *c) {
   auto oldModel = drawingModel, oldView = drawingView;
   drawingModel = model;
   drawingView = view;
@@ -201,7 +201,7 @@ static unsigned __fastcall shaderDrawHook(void *obj, void *, const float *model,
   if(material) { ++worldMaterialDepth; materialDescriptor=obj; }
   float renderedWorld[16], renderedView[16];
   drawArgumentsFiltered =
-      interpolateMotion &&
+      (interpolateMotion || (vrPass && vrCurrentRegion() >= 0)) &&
       filterDrawArguments(model, view, renderedWorld, renderedView,mode);
   if (diagnostics && modelOwner &&
       (!strcmp(modelOwner, "back2") || !strcmp(modelOwner, "back5"))) {
@@ -234,8 +234,11 @@ static unsigned __fastcall shaderDrawHook(void *obj, void *, const float *model,
   }
   int savedWidth = game<int>(0x508b14), savedHeight = game<int>(0x508b18);
   if (drawArgumentsFiltered) {
-    game<int>(0x508b14) = actualViewport.Width;
-    game<int>(0x508b18) = actualViewport.Height;
+    int region = vrPass ? vrCurrentRegion() : -1;
+    game<int>(0x508b14) = region >= 0 ? vrRegions[region].viewport.Width
+                                      : actualViewport.Width;
+    game<int>(0x508b18) = region >= 0 ? vrRegions[region].viewport.Height
+                                      : actualViewport.Height;
     ++worldShaderDepth;
   }
   auto r =
@@ -251,6 +254,16 @@ static unsigned __fastcall shaderDrawHook(void *obj, void *, const float *model,
   if(material) --worldMaterialDepth;
   materialDescriptor=oldDescriptor;
   return r;
+}
+static unsigned __fastcall shaderDrawHook(void *obj, void *, const float *model,
+                                          const float *view, unsigned mode,
+                                          unsigned a, const void *b,
+                                          const void *c) {
+  // Single-pass stereo: one traversal, each eye-dependent scene draw issued
+  // per view region. The native entry rebuilds every constant from (world, VP).
+  if (vrPass && vrCurrentRegion() < 0 && visibleSceneView(view))
+    return vrEachRegion([&] { return shaderDrawOnce(obj, model, view, mode, a, b, c); });
+  return shaderDrawOnce(obj, model, view, mode, a, b, c);
 }
 struct RenderPose {
   std::vector<float> previous, current, result;
@@ -704,6 +717,11 @@ static bool filterDrawArguments(const float *world, const float *view,
     memcpy(outView,view,64);
   } else {
     if(!sceneViewport) return false;
+    int region = vrPass ? vrCurrentRegion() : -1;
+    if (region >= 0) {
+      memcpy(outView, vrRegionMatrix(region, view), 64);
+      goto world;
+    }
     float packedView[16], filteredView[16];
     for (int row = 0; row < 4; ++row)
       for (int col = 0; col < 4; ++col)
@@ -712,6 +730,11 @@ static bool filterDrawArguments(const float *world, const float *view,
     for (int row = 0; row < 4; ++row)
       for (int col = 0; col < 4; ++col)
         outView[row * 4 + col] = filteredView[col * 4 + row];
+  }
+world:
+  if (!interpolateMotion) {
+    memcpy(outWorld, world, 64);
+    return true;
   }
   float packedWorld[12], attachment[12];
   for (int row = 0; row < 3; ++row)
@@ -771,6 +794,17 @@ shadowReceiverHook(void *obj, void *, uintptr_t a, const float *view,
                    uintptr_t l, uintptr_t m, uintptr_t n, uintptr_t o) {
   uintptr_t caller = uintptr_t(__builtin_return_address(0)) - gameBase;
   bool scoped = shadowReceiverDepth || caller == 0x3526bc;
+  if (scoped && vrPass && view && vrSceneMatrix(view)) {
+    // Receivers cull and upload with the scene VP: one call per eye region.
+    auto receive = [&] {
+      ++shadowReceiverDepth;
+      auto result = shadowReceiver(obj, a, vrRegionMatrix(vrCurrentRegion(), view),
+                                   c, e, f, g, h, i, j, k, l, m, n, o);
+      --shadowReceiverDepth;
+      return result;
+    };
+    return vrCurrentRegion() >= 0 ? receive() : vrEachRegion(receive);
+  }
   if (scoped) {
     ++shadowReceiverDepth;
     ++shadowEntries;
@@ -1047,10 +1081,17 @@ using VectorFn = float *(__cdecl *)(float *, const float *, const float *);
 static VectorFn projectVector;
 static float *__cdecl vectorHook(float *out, const float *in,
                                  const float *matrix) {
-  if (worldDepth && !manualBookActive() && cameraFrame == frames &&
+  bool vrHud = false;
+  if (vrPass && vrCurrentRegion() >= 0 && matrix && vrSceneMatrix(matrix))
+    matrix = vrRegionMatrix(vrCurrentRegion(), matrix);
+  else if (worldDepth && vrHudRedirected && matrix && vrSceneMatrix(matrix)) {
+    // HUD markers on the VR panel use the left eye's projection directly.
+    matrix = vrRegionMatrix(0, matrix);
+    vrHud = true;
+  } else if (worldDepth && !manualBookActive() && cameraFrame == frames &&
       !memcmp(matrix, cameraNative, 64)) matrix = cameraRendered;
   auto r = projectVector(out, in, matrix);
-  if (worldDepth) out[0] *= float(outputWidth) / uiWidth();
+  if (worldDepth && !vrHud) out[0] *= float(outputWidth) / uiWidth();
   uintptr_t caller=uintptr_t(__builtin_return_address(0))-gameBase;
   if(bubbleScope && caller==0x1cd5b4 && std::isfinite(out[0]) && std::isfinite(out[1])) {
     bubbleX=(out[0]+1.f)*320.f;
@@ -1091,7 +1132,7 @@ static unsigned __fastcall mouseHook(void *obj, void *, int *pt, void *a,
     float px = float(pt[0]) * outputWidth / 640.f,
           py = float(pt[1]) * outputHeight / 480.f;
     float gap = float(outputWidth) - uiWidth(), offset = gap / 2;
-    bool activeHud = hudSeen && frames - lastHudFrame <= 2;
+    bool activeHud = hudSeen && frames - lastHudFrame <= 2 && !vrSession;
     if (activeHud) {
       // Preserve world/camera mouse coordinates; only the anchored interactive
       // right-hand controls use the UI inverse transform in ordinary gameplay.
@@ -1124,14 +1165,26 @@ static unsigned __fastcall particleDrawHook(void *obj, void *,
                                actualViewport.Height == outputHeight) ||
                               (int(actualViewport.Width) == sceneWidth &&
                                int(actualViewport.Height) == sceneHeight));
+  if (scoped && vrPass && vrCurrentRegion() < 0)
+    return vrEachRegion([&] { return particleDrawHook(obj, nullptr, view, axes, category); });
   int savedWidth = game<int>(0x508b14), savedHeight = game<int>(0x508b18);
+  int region = scoped && vrPass ? vrCurrentRegion() : -1;
+  if (region >= 0) {
+    // Pretransformed batch: project with the eye, offset into its region by
+    // the draw hook. Billboards face the eye when the view layout matches.
+    if (view && vrSceneMatrix(view))
+      view = vrRegionMatrix(region, view);
+    if (vrAxesCompatible && axes &&
+        !memcmp(axes, reinterpret_cast<void *>(gameBase + 0x9a9b00), 64))
+      axes = vrRegions[region].view;
+  }
   if (scoped) {
     ++worldParticleDepth;
-    game<int>(0x508b14) = actualViewport.Width;
-    game<int>(0x508b18) = actualViewport.Height;
+    game<int>(0x508b14) = region >= 0 ? vrRegions[region].viewport.Width : actualViewport.Width;
+    game<int>(0x508b18) = region >= 0 ? vrRegions[region].viewport.Height : actualViewport.Height;
     ++projectedGeometryDepth;
-    if (interpolateMotion && !manualBookActive() && cameraFrame == frames && view &&
-        !memcmp(view, cameraNative, 64))
+    if (region < 0 && interpolateMotion && !manualBookActive() &&
+        cameraFrame == frames && view && !memcmp(view, cameraNative, 64))
       view = cameraRendered;
   }
   auto result = particleDraw(obj, view, axes, category);
@@ -1150,8 +1203,15 @@ static unsigned __fastcall particleDrawHook(void *obj, void *,
 }
 static unsigned __fastcall projectedQuadHook(void *texture,void*,
     uintptr_t a,uintptr_t b,uintptr_t c,uintptr_t e,float opacity,unsigned mode) {
+  if (vrPass && vrCurrentRegion() < 0 && actualViewport.Width == outputWidth &&
+      actualViewport.Height == outputHeight)
+    return vrEachRegion([&] { return projectedQuadHook(texture, nullptr, a, b, c, e, opacity, mode); });
   int savedWidth = game<int>(0x508b14), savedHeight = game<int>(0x508b18);
-  if (actualViewport.Width && actualViewport.Height) {
+  int region = vrPass ? vrCurrentRegion() : -1;
+  if (region >= 0) {
+    game<int>(0x508b14) = vrRegions[region].viewport.Width;
+    game<int>(0x508b18) = vrRegions[region].viewport.Height;
+  } else if (actualViewport.Width && actualViewport.Height) {
     game<int>(0x508b14) = actualViewport.Width;
     game<int>(0x508b18) = actualViewport.Height;
   }
@@ -1263,7 +1323,8 @@ static void installNativeHooks() {
 static gurumin::FramePacer framePacer;
 static bool pacingFocused;
 static void paceAfterPresent(HRESULT result) {
-  if (!supported || FAILED(result) || modernSettings.frameCap <= 0) {
+  // VR frames are paced by the headset's requests instead.
+  if (!supported || FAILED(result) || modernSettings.frameCap <= 0 || vrSession) {
     framePacer.reset();
     return;
   }
@@ -1296,7 +1357,16 @@ static HRESULT WINAPI presentHook(IDirect3DDevice9 *d, const RECT *a,
     if (GetMonitorInfoA(MonitorFromWindow(gameWindow, MONITOR_DEFAULTTOPRIMARY),
                         &mi)) {
       int width = outputWidth, height = outputHeight;
-      if (borderless || !windowedDevice) {
+      if (vrSession) {
+        // The side-by-side VR target is wider than any desktop: present it
+        // scaled into a borderless window that fits the monitor.
+        double scale = std::min({1.0,
+            double(mi.rcMonitor.right - mi.rcMonitor.left) / width,
+            double(mi.rcMonitor.bottom - mi.rcMonitor.top) / height});
+        width = std::max(1, int(width * scale));
+        height = std::max(1, int(height * scale));
+      }
+      if (borderless || !windowedDevice || vrSession) {
         SetWindowLongA(gameWindow, GWL_STYLE, WS_POPUP | WS_VISIBLE);
         SetWindowLongA(gameWindow, GWL_EXSTYLE,
                        GetWindowLongA(gameWindow, GWL_EXSTYLE) &
@@ -1333,8 +1403,10 @@ static HRESULT WINAPI presentHook(IDirect3DDevice9 *d, const RECT *a,
         transforms, consts, supported ? game<unsigned>(0x1de47f4) : 0,
         supported ? game<unsigned>(0x1de47f8) : 0);
   }
+  vrBeforePresent(d);
   HRESULT result = present(d, a, b, w, r);
   paceAfterPresent(result);
+  vrAfterPresent();
   return result;
 }
 static HRESULT WINAPI transformHook(IDirect3DDevice9 *d,
@@ -1404,10 +1476,16 @@ static DrawPrimitiveFn drawPrimitive;
 static DrawIndexedUPFn drawIndexedUP;
 static HRESULT WINAPI indexedHook(IDirect3DDevice9 *d,D3DPRIMITIVETYPE t,INT base,
                                   UINT min,UINT vertices,UINT start,UINT count) {
+  if (vrPass && vrCurrentRegion() < 0 && actualViewport.Width == outputWidth &&
+      actualViewport.Height == outputHeight)
+    ++vrUnscopedDraws;
   PointSampler sampling(d,nearestAssetSampler(d));
   return drawIndexed(d,t,base,min,vertices,start,count);
 }
 static HRESULT WINAPI primitiveHook(IDirect3DDevice9 *d,D3DPRIMITIVETYPE t,UINT start,UINT count) {
+  if (vrPass && vrCurrentRegion() < 0 && actualViewport.Width == outputWidth &&
+      actualViewport.Height == outputHeight)
+    ++vrUnscopedDraws;
   PointSampler sampling(d,nearestAssetSampler(d));
   return drawPrimitive(d,t,start,count);
 }
@@ -1423,6 +1501,52 @@ static HRESULT WINAPI drawHook(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n,
   DWORD fvf = 0;
   d->GetFVF(&fvf);
   auto caller=uintptr_t(__builtin_return_address(0))-gameBase;
+  if (vrSession && supported) {
+    // The scene composite becomes the eye copy plus the HUD overlay target.
+    if (caller == 0x3a7e21 && vrBlit(d, t, n, data, stride))
+      return D3D_OK;
+    // Menu-shrink panels frame a shrunken flat scene; VR keeps full eyes.
+    if (vrHudRedirected && hudDepth &&
+        (activeSpriteCaller == 0x1cf352 || activeSpriteCaller == 0x1cf3bf))
+      return D3D_OK;
+    int region = vrPass ? vrCurrentRegion() : -1;
+    if (region >= 0 && (fvf & D3DFVF_POSITION_MASK) == D3DFVF_XYZRHW &&
+        stride >= 8) {
+      // Pretransformed vertices are absolute target pixels: move them into
+      // the eye's half of the side-by-side pass.
+      UINT count = t == D3DPT_TRIANGLESTRIP || t == D3DPT_TRIANGLEFAN ? n + 2
+                   : t == D3DPT_TRIANGLELIST                          ? n * 3
+                   : t == D3DPT_LINELIST                              ? n * 2
+                   : t == D3DPT_LINESTRIP                             ? n + 1
+                                                                      : n;
+      if (count < 200000) {
+        std::vector<unsigned char> copy(static_cast<const unsigned char *>(data),
+            static_cast<const unsigned char *>(data) + size_t(count) * stride);
+        const auto &vp = vrRegions[region].viewport;
+        float xmin = 1e9f, xmax = -1e9f, ymin = 1e9f, ymax = -1e9f;
+        for (UINT i = 0; i < count; ++i) {
+          auto f = reinterpret_cast<float *>(copy.data() + size_t(i) * stride);
+          xmin = std::min(xmin, f[0]); xmax = std::max(xmax, f[0]);
+          ymin = std::min(ymin, f[1]); ymax = std::max(ymax, f[1]);
+          f[0] += float(vp.X);
+          f[1] += float(vp.Y);
+        }
+        static unsigned traced;
+        if (diagnostics && traced < 400 && frames % 300 == 0) {
+          ++traced;
+          log("VR region draw frame=%u region=%d caller=%lx sprite=%lx n=%u fvf=%lx "
+              "x=%.1f..%.1f y=%.1f..%.1f particle=%d quad=%d", frames, region,
+              (unsigned long)caller, (unsigned long)activeSpriteCaller, n,
+              (unsigned long)fvf, xmin, xmax, ymin, ymax, worldParticleDepth,
+              projectedGeometryDepth);
+        }
+        return submitUP(d, t, n, copy.data(), stride);
+      }
+    }
+    if (vrPass && region < 0 && actualViewport.Width == outputWidth &&
+        actualViewport.Height == outputHeight)
+      ++vrUnscopedDraws;
+  }
   if(supported && modernSettings.antiAliasing && caller==0x3a7e21 &&
      fvf==0x4c4 && stride==56 && t==D3DPT_TRIANGLESTRIP && n==2 &&
      game<uintptr_t>(0x1de4830)==gameBase+0x1cf280 &&
@@ -1517,7 +1641,8 @@ static HRESULT WINAPI drawHook(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n,
       }
       float x = (xmin + xmax) * 320.f / uiWidth(),
             y = (ymin + ymax) * 240.f / outputHeight;
-      if (hudDepth && !worldDepth && !cursorDepth) {
+      // VR keeps the whole HUD on its centred 4:3 panel canvas.
+      if (hudDepth && !worldDepth && !cursorDepth && !vrHudRedirected) {
         if (x >= 480.f || (y < 23.f && x >= 390.f))
           offset = gap;
         else if ((y < 55.f && x < 165.f) ||
@@ -1714,6 +1839,9 @@ static HRESULT WINAPI textureHook(IDirect3DDevice9 *d, UINT w, UINT h,
 }
 static HRESULT WINAPI targetHook(IDirect3DDevice9 *d, UINT index,
                                  IDirect3DSurface9 *t) {
+  // A backbuffer rebind while the VR overlay captures the HUD stays on the
+  // overlay, so later HUD draws are not lost to the desktop mirror.
+  t = vrRedirectTarget(index, t);
   static int z;
   if (diagnostics && z < 40 && t) {
     D3DSURFACE_DESC desc;
@@ -1729,7 +1857,14 @@ static HRESULT WINAPI viewportHook(IDirect3DDevice9 *d, const D3DVIEWPORT9 *v) {
     log("Viewport %u,%u %ux%u", v->X, v->Y, v->Width, v->Height);
     ++z;
   }
-  HRESULT result = setViewport(d, v);
+  HRESULT result;
+  if (vrPass && vrFixedRegion >= 0 && v->Width == outputWidth &&
+      v->Height == outputHeight)
+    // Two-pass stereo: the native full pass viewport becomes this eye's half;
+    // the engine keeps seeing its own viewport.
+    result = setViewport(d, &vrRegions[vrFixedRegion].viewport);
+  else
+    result = setViewport(d, v);
   if (SUCCEEDED(result))
     actualViewport = *v;
   if (supported && SUCCEEDED(result) && v->Width == outputWidth &&
@@ -1744,12 +1879,14 @@ static HRESULT WINAPI viewportHook(IDirect3DDevice9 *d, const D3DVIEWPORT9 *v) {
 using ResetFn = HRESULT(WINAPI *)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *);
 static ResetFn resetDevice;
 static HRESULT WINAPI resetHook(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
-  // A numeric cap must not silently turn native VSync off.
-  if (supported && modernSettings.frameCap < 0)
+  // A numeric cap must not silently turn native VSync off. VR is paced by
+  // the headset, never by the desktop refresh.
+  if (supported && (modernSettings.frameCap < 0 || vrSession))
     p->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
   framePacer.reset();
   sceneAA.reset();
   resetCameraControls();
+  vrDeviceLost();
   HRESULT result = resetDevice(d, p);
   if (SUCCEEDED(result)) {
     shadowReset(true);
@@ -1762,6 +1899,7 @@ static HRESULT WINAPI resetHook(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
     skinBodies.clear();
     sharedFrame = sharedTick = cameraFrame = ~0u;
     hudSeen = false;
+    vrDeviceCreated(d);
   }
   log("Reset %ux%u hr=%08lx", p->BackBufferWidth, p->BackBufferHeight,
       (unsigned long)result);
@@ -1774,8 +1912,9 @@ static HRESULT WINAPI deviceHook(IDirect3D9 *d, UINT a, D3DDEVTYPE type, HWND w,
   windowedDevice = p->Windowed;
   outputWidth = p->BackBufferWidth;
   outputHeight = p->BackBufferHeight;
-  // A numeric cap must not silently turn native VSync off.
-  if (supported && modernSettings.frameCap < 0)
+  // A numeric cap must not silently turn native VSync off. VR is paced by
+  // the headset, never by the desktop refresh.
+  if (supported && (modernSettings.frameCap < 0 || vrSession))
     p->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
   log("CreateDevice %ux%u windowed=%d refresh=%u interval=%u",
       p->BackBufferWidth, p->BackBufferHeight, p->Windowed,
@@ -1826,6 +1965,8 @@ static HRESULT WINAPI deviceHook(IDirect3D9 *d, UINT a, D3DDEVTYPE type, HWND w,
     if(supported && nativeHooksInstalled && !installShadowHooks())
       log("Optional high-resolution shadow hooks unavailable; native retained");
     installCameraHooks();
+    if (vrSession)
+      vrDeviceCreated(*out);
   }
   return h;
 }
@@ -1871,6 +2012,7 @@ static bool verifyExecutable() {
          !memcmp(digest, expected, sizeof(expected));
 }
 #include "launcher.hpp"
+#include "vr.hpp"
 static unsigned codeImmediate(uintptr_t rva) {
   unsigned value;
   memcpy(&value, reinterpret_cast<const void *>(gameBase + rva), sizeof(value));
@@ -1921,6 +2063,9 @@ static void applyModernResolution(IDirect3D9 *d) {
     log("Texture capabilities too small; preserving native mode");
     return;
   }
+  // VR presents a side-by-side pass scaled into a desktop window.
+  if (vrSession)
+    game<int>(0x1de4c40) = 0;
   bool fullscreen = game<int>(0x1de4c40) != 0;
   bool modeFound = !fullscreen;
   if (fullscreen) {
@@ -1941,7 +2086,7 @@ static void applyModernResolution(IDirect3D9 *d) {
       effective = {std::min(1280, maxEdge), std::min(720, maxEdge)};
     game<int>(0x1de4c40) = 0;
     log("Requested mode unavailable; falling back to desktop windowed");
-  } else if (!fullscreen && borderless &&
+  } else if (!fullscreen && borderless && !vrSession &&
              (effective.width > int(desktop.Width) ||
               effective.height > int(desktop.Height))) {
     // Borderless output must fit the visible desktop. Preserve the requested
@@ -2005,6 +2150,7 @@ extern "C" IDirect3D9 *WINAPI Direct3DCreate9(UINT version) {
   log("Gurumin Modern motion=%d rhythm=%d borderless=%d diagnostics=%d",
       interpolateMotion, smoothRhythm, borderless, diagnostics);
   installFaultTrace();
+  vrStart();
   auto d = real(version);
   if (d) {
     applyModernResolution(d);

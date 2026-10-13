@@ -428,3 +428,44 @@ all six optional camera hooks, 16x anisotropy and2048 shadow targets. The earlie
 Experimental startup failure occurred before renderer initialization. Selecting
 the installed GE compatibility tool fixed that startup without changing the
 renderer or outfit files. No global Proton installation was modified.
+
+## OpenXR VR mode (2026-10-13)
+
+Architecture reuses the author's SS2VR design: x64 OpenXR/D3D11 host started by
+the proxy with CreateProcessW (same Proton prefix, Proton's 64-bit wineopenxr),
+named-section IPC (`src/vr_protocol.hpp`, layout asserted identical on x86/x64),
+two late-latched request slots, DXVK KMT shared A8R8G8B8 render targets opened
+with OpenSharedResource, D3D9 event-query completion, CPU pixel sections as the
+fallback (native Windows non-Ex D3D9). sRGB swapchains (91) decode the game's
+gamma-space bytes correctly; UNORM looked washed out in Monado.
+
+RE used (VAs): per-frame 0x60c750 -> field 0x60cb10 -> scene root 0x5d3360
+(binds scene RT [0x21a35cc+parity*4]) -> composite 0x7a60b0 (blit ret 0x7a7e21)
+-> HUD callback -> Present. View culling is 0x775320 cdecl(center, vp, radius);
+0x774a70 is a look-at zone test (zone table also read by collision, untouched);
+draw-only zone gates 0x750ae6/0x75170e/0x751f4b/0x5dcf3f NOP'd and 0x752946 jne->jmp
+in VR only, byte-verified. Player actor[0] at VA 0x1487ff0, position actor+0x2358.
+Input: init 0x7ae5c0 (XInput HMODULE at 0x1e280d4, USEJP 0x1df37c8 cleared when no
+pad), poll 0x7ae330 fills DIJOYSTATE (buttons bytes +0x30..+0x3b).
+
+Single pass: VR output is (2*eyeW)xeyeH; the scene root runs once and every
+eye-dependent entry (shader draw 0x380150, particles 0x725f40, projected quads
+0x77fbe0, shadow receivers 0x751ee0) is re-issued per eye region with its
+viewport/scissor and eye VP; XYZRHW vertices are offset into the region. Shadow
+casters render once. Lab counter of scene-pass draws outside eye regions: 0.
+Two-pass fallback (VRSinglePass=0) produces the same images.
+
+HUD: the composite blit is replaced by eye copies plus a redirect of the HUD
+into an A8R8G8B8 overlay with separate coverage alpha. The blit must be replayed
+with colour writes off: HUD sprites depth-test against what it leaves, and
+without it the HP/rhythm/minimap elements vanished. HUD anchors stay on the
+centred 4:3 canvas in VR.
+
+Verified in a private lab (GE-Proton10-34 prefix, Xvfb, simulated Monado remote
+driver, SS2VR pose/input drivers): zero-copy and CPU paths, title/menu screens,
+stereo world, head yaw/pitch/translation, culling when looking behind, VR left
+stick movement relative to gaze, right-stick orbit and rise, both-stick recenter,
+diorama scale, particles, rig collision in a corner, host recovery after the
+runtime restarts, VR-off flat regression. Not verified here: physical headset
+comfort/scale (VRUnitsPerMeter=100 guess), XInput gamepad in VR, SteamVR, outdoor
+areas/sky, native Windows.
