@@ -944,8 +944,12 @@ static unsigned __cdecl solidRectHook(int x0, int y0, int x1, int y1,
               y0==0 && y1==480;
   bool full = x0==0 && x1==640 && (bars || fade);
   if (full) ++fullscreenSolidDepth;
+  if (full && fade) ++vrFadeDepth;
+  if (full && bars && !fade) ++vrBarDepth;
   auto result = solidRect(x0, y0, x1, y1, color, z, alpha);
   if (full) --fullscreenSolidDepth;
+  if (full && fade) --vrFadeDepth;
+  if (full && bars && !fade) --vrBarDepth;
   return result;
 }
 static void introWings() {
@@ -1509,6 +1513,9 @@ static HRESULT WINAPI drawHook(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n,
     if (vrHudRedirected && hudDepth &&
         (activeSpriteCaller == 0x1cf352 || activeSpriteCaller == 0x1cf3bf))
       return D3D_OK;
+    // Cinematic letterbox bars would only frame the floating HUD panel.
+    if (vrHudRedirected && vrBarDepth)
+      return D3D_OK;
     int region = vrPass ? vrCurrentRegion() : -1;
     if (region >= 0 && (fvf & D3DFVF_POSITION_MASK) == D3DFVF_XYZRHW &&
         stride >= 8) {
@@ -1730,6 +1737,9 @@ static HRESULT WINAPI drawHook(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n,
             game<int>(0x5e160c), rhythmDelta, xmin, ymin, f[0], f[1],
             spriteXDelta, spriteYDelta);
       }
+      // VR: screen fades and the iris transition cover the whole view.
+      if (vrHudRedirected && count == 4 && stride == 32 && (iris || vrFadeDepth))
+        return vrFadeEyes(d, t, n, copy.data(), stride);
       return submitUP(d, t, n, copy.data(), stride);
     }
   }

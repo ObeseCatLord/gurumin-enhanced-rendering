@@ -102,7 +102,6 @@ static void loadVrConfig() {
   r.dioramaDistance = vrIniFloat("VRDioramaDistance", .8f, 0, 5);
   r.dioramaHeight = vrIniFloat("VRDioramaHeight", .45f, -2, 5);
   r.snapTurn = readInt("VRSnapTurn", 0) != 0;
-  r.collision = readInt("VRCameraCollision", 1) != 0;
   r.diorama = modernSettings.vrScale == 1;
   r.invertX = modernSettings.invertX;
   r.invertY = modernSettings.invertY;
@@ -479,44 +478,6 @@ static gurumin::vr::Vec3 vrPlayerPosition() {
   return vrPlayerPrevious + (vrPlayerCurrent - vrPlayerPrevious) * alpha;
 }
 
-// Life size: keep the rig's head origin inside the level using the native
-// camera collision segment, like the desktop camera does.
-static void vrCollideRig(float dt) {
-  using namespace gurumin::vr;
-  auto actor = game<char *>(0x1264684);
-  void *geometry = actor && readableRange(actor + 0x231c, sizeof(void *))
-                       ? *reinterpret_cast<void **>(actor + 0x231c) : nullptr;
-  if (vrRig.config.diorama || !vrRig.config.collision || !cameraSegment || !geometry) {
-    vrRig.settlePull(1, 1, 0);
-    return;
-  }
-  // Pivot near Parin's chest. Rise over obstructions first (open-topped
-  // rooms), and only pull in toward her when rising does not clear them.
-  Vec3 pivot = vrRig.anchor + Vec3{0, 0, 50};
-  auto clearance = [&](float lift) {
-    Vec3 desired = vrRig.originWorld(1, lift);
-    float eye[4] = {desired.x, desired.y, desired.z, 1};
-    float target[4] = {pivot.x, pivot.y, pivot.z, 1}, hit[4]{}, distance = 999999.f;
-    if (!cameraSegment(geometry, nullptr, 0, eye, target, hit, &distance) ||
-        !gurumin::contractCamera(eye, target, hit, 30.f))
-      return 1.f;
-    Vec3 full = desired - pivot, contracted = Vec3{eye[0], eye[1], eye[2]} - pivot;
-    float length = std::sqrt(dot(full, full));
-    return length > 1e-3f ? std::sqrt(dot(contracted, contracted)) / length : 1.f;
-  };
-  float bestPull = clearance(0), bestLift = 0;
-  for (float lift : {15.f, 30.f, 45.f}) {
-    if (bestPull >= .95f)
-      break;
-    float allowed = clearance(lift * Pi / 180);
-    if (allowed > bestPull + .05f) {
-      bestPull = allowed;
-      bestLift = lift * Pi / 180;
-    }
-  }
-  vrRig.settlePull(bestPull, dt, bestLift);
-}
-
 // Once per frame: recenter, stick steering and anchor following.
 static void vrUpdateRig(const gurumin::vr::Input &input) {
   using namespace gurumin::vr;
@@ -576,7 +537,6 @@ static void vrUpdateRig(const gurumin::vr::Input &input) {
   // Scripted scenes follow the authored camera target; gameplay the player.
   Vec3 target = scripted ? vrGameVector(vrconst::CameraTarget) : vrPlayerPosition();
   vrRig.anchor = vrAnchor.update(target, dt, vrRig.config);
-  vrCollideRig(dt);
 }
 
 static bool vrComputeRegions(const gurumin::vr::Request &request) {
@@ -700,12 +660,6 @@ static bool vrBlit(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, UINT count, const
   base->Release();
   if (!vrSceneSurface)
     return false;
-  if (vrFrameSlot >= 0)
-    for (unsigned h = 0; h < 2; ++h) {
-      RECT source{LONG(h * vrEyeWidth), 0, LONG((h + 1) * vrEyeWidth), LONG(vrEyeHeight)};
-      d->StretchRect(vrSceneSurface, &source, vrImages.surface[vrFrameSlot][h], nullptr,
-                     D3DTEXF_POINT);
-    }
   if (vrSavedTarget) {
     vrSavedTarget->Release();
     vrSavedTarget = nullptr;
@@ -728,6 +682,57 @@ static bool vrBlit(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, UINT count, const
   vrHudRedirected = true;
   ++vrStatRedirects;
   return true;
+}
+
+// A native fullscreen fade or iris drawn during the HUD: apply it to both
+// eyes on the stereo scene target (centred per eye, clipped to its half),
+// then let it darken the HUD drawn so far without adding panel coverage, so
+// the world behind the panel is not darkened twice.
+static HRESULT vrFadeEyes(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, UINT count,
+                          const void *vertices, UINT stride) {
+  IDirect3DSurface9 *current = nullptr;
+  if (vrSceneSurface && SUCCEEDED(d->GetRenderTarget(0, &current)) && current) {
+    D3DVIEWPORT9 viewport{};
+    RECT scissor{};
+    DWORD scissorEnabled = FALSE, separateAlpha = FALSE;
+    d->GetViewport(&viewport);
+    d->GetScissorRect(&scissor);
+    d->GetRenderState(D3DRS_SCISSORTESTENABLE, &scissorEnabled);
+    d->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, &separateAlpha);
+    if (SUCCEEDED(setTarget(d, 0, vrSceneSurface))) {
+      D3DVIEWPORT9 pass{0, 0, outputWidth, outputHeight, 0.f, 1.f};
+      setViewport(d, &pass);
+      d->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
+      d->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+      std::vector<unsigned char> copy(size_t(count + 2) * stride);
+      for (int region = 0; region < vrRegionCount; ++region) {
+        const auto &v = vrRegions[region].viewport;
+        memcpy(copy.data(), vertices, copy.size());
+        float shift = float(v.X) + v.Width * .5f - outputWidth * .5f;
+        for (UINT i = 0; i < count + 2; ++i)
+          reinterpret_cast<float *>(copy.data() + size_t(i) * stride)[0] += shift;
+        RECT rect{LONG(v.X), LONG(v.Y), LONG(v.X + v.Width), LONG(v.Y + v.Height)};
+        d->SetScissorRect(&rect);
+        drawUP(d, type, count, copy.data(), stride);
+      }
+      setTarget(d, 0, current);
+      setViewport(d, &viewport);
+      d->SetScissorRect(&scissor);
+      d->SetRenderState(D3DRS_SCISSORTESTENABLE, scissorEnabled);
+      d->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, separateAlpha);
+    }
+  }
+  if (current)
+    current->Release();
+  DWORD sourceAlpha = D3DBLEND_ONE, destinationAlpha = D3DBLEND_INVSRCALPHA;
+  d->GetRenderState(D3DRS_SRCBLENDALPHA, &sourceAlpha);
+  d->GetRenderState(D3DRS_DESTBLENDALPHA, &destinationAlpha);
+  d->SetRenderState(D3DRS_SRCBLENDALPHA, D3DBLEND_ZERO);
+  d->SetRenderState(D3DRS_DESTBLENDALPHA, D3DBLEND_ONE);
+  HRESULT result = submitUP(d, type, count, vertices, stride);
+  d->SetRenderState(D3DRS_SRCBLENDALPHA, sourceAlpha);
+  d->SetRenderState(D3DRS_DESTBLENDALPHA, destinationAlpha);
+  return result;
 }
 
 static IDirect3DSurface9 *vrRedirectTarget(DWORD index, IDirect3DSurface9 *target) {
@@ -841,6 +846,12 @@ static void vrPublish(IDirect3DDevice9 *d, bool world) {
   unsigned canvas = std::min(outputWidth, outputHeight * 4 / 3);
   RECT crop{LONG((outputWidth - canvas) / 2), 0, LONG((outputWidth + canvas) / 2),
             LONG(outputHeight)};
+  // Eyes are copied after the HUD so native fades drawn onto them count.
+  if (world && vrSceneSurface)
+    for (unsigned h = 0; h < 2; ++h) {
+      RECT eye{LONG(h * vrEyeWidth), 0, LONG((h + 1) * vrEyeWidth), LONG(vrEyeHeight)};
+      d->StretchRect(vrSceneSurface, &eye, vrImages.surface[slot][h], nullptr, D3DTEXF_POINT);
+    }
   IDirect3DSurface9 *source = nullptr;
   if (world)
     (source = vrImages.overlaySurface)->AddRef();

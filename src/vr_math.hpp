@@ -109,8 +109,6 @@ struct RigConfig {
   float snapUnits = 400;       // Anchor jump treated as a teleport.
   bool diorama = false, snapTurn = false, invertX = true, invertY = false;
   float snapAngle = 30 * Pi / 180;
-  bool collision = true;
-  float collisionInTime = .05f, collisionOutTime = .5f; // seconds
 };
 
 // Smoothly follows the player position: light horizontal smoothing, slower
@@ -145,8 +143,6 @@ struct Rig {
   float yaw = 0;          // Game yaw of the rig's forward (radians, X axis = 0).
   float elevation = 0;    // Angle of the anchor below the head, radians.
   float radius = 0;       // Metres from head to anchor (tracking space).
-  float pull = 1;         // Collision pull-in of the rig toward the anchor.
-  float lift = 0;         // Collision elevation boost (radians).
   Vec3 recenterPosition{};
   float recenterYaw = 0;
   bool recentered = false, oriented = false;
@@ -208,29 +204,8 @@ struct Rig {
     return normalize(yawRotation(-recenterYaw) * normalize(q));
   }
   // Anchor sits below and ahead of the recentered head.
-  Vec3 anchorOffset(float atPull, float atLift) const {
-    float r = radius * atPull;
-    float e = std::min(elevation + atLift, 80 * Pi / 180);
-    return {0, -r * std::sin(e), -r * std::cos(e)};
-  }
-  Vec3 anchorOffset() const { return anchorOffset(pull, lift); }
-  // Game position of the recentered head origin at a given pull and lift.
-  Vec3 originWorld(float atPull, float atLift = 0) const {
-    return anchor + direction(Vec3{} - anchorOffset(atPull, atLift)) * unitsPerMeter();
-  }
-  // Ease toward what a collision query allows: quickly in/up, slowly back.
-  void settlePull(float allowed, float dt, float allowedLift = 0) {
-    if (!std::isfinite(allowed) || !std::isfinite(dt) || !std::isfinite(allowedLift))
-      return;
-    allowed = std::clamp(allowed, .35f, 1.f);
-    allowedLift = std::clamp(allowedLift, 0.f, Pi / 2);
-    dt = std::clamp(dt, 0.f, .1f);
-    auto ease = [&](float &value, float target, bool tightening) {
-      float time = tightening ? config.collisionInTime : config.collisionOutTime;
-      value += (target - value) * (1 - std::exp(-dt / std::max(time, 1e-3f)));
-    };
-    ease(pull, allowed, allowed < pull);
-    ease(lift, allowedLift, allowedLift > lift);
+  Vec3 anchorOffset() const {
+    return {0, -radius * std::sin(elevation), -radius * std::cos(elevation)};
   }
   Vec3 worldPosition(Vec3 tracking) const {
     return anchor + direction(recenterVector(tracking) - anchorOffset()) *

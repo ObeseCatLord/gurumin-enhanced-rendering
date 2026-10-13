@@ -29,6 +29,8 @@ static void vrDeviceCreated(IDirect3DDevice9 *);
 static void vrDeviceLost();
 static bool vrSceneRoot(void (__cdecl *native)());
 static void vrInputOverlay(int *state);
+static int vrFadeDepth, vrBarDepth; // Native fullscreen fade / cinematic bars.
+static HRESULT vrFadeEyes(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
 static IDirect3DSurface9 *vrRedirectTarget(DWORD index, IDirect3DSurface9 *target);
 static bool vrMovement(uintptr_t caller, float stickX, float stickY,
                        float *outX, float *outY);

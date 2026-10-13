@@ -10,10 +10,11 @@
 - Single-pass stereo: one scene traversal, each eye-dependent draw issued per
   eye region of a side-by-side target; eye-aware culling and all map zones drawn.
 - HUD on a soft head-following panel; title, menus and loading on a virtual screen.
+- Native screen fades and the iris transition cover the whole view in both eyes;
+  cinematic letterbox bars are omitted in VR. The rig is never moved by walls.
 - x64 OpenXR host (`GuruminVR/`) started by the game on Windows and Proton;
   zero-copy DXVK shared images under Proton, CPU copy on native Windows; host
   restarts automatically if the runtime starts later or stops.
-- Life-size rig collision using the game's camera collision (rises over walls).
 - Optional installer manages the `GuruminVR` files and adopts a copied release.
 
 ## 1.0.4 — 2026-10-08

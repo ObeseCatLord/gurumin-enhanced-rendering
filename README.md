@@ -107,9 +107,12 @@ Linux / Proton notes:
   D3D9 cannot share them, so Windows uses a slower CPU copy (lower the
   per-eye `VRRenderScale` if frame rate suffers).
 
-VR limitations: water reflections are rendered from the flat camera; screen fades
-darken the HUD panel rather than the whole view; very tight rooms may bring the
-life-size rig close to Parin (it rises over walls first, then moves closer).
+Screen fades and the iris transition darken your whole view in both eyes;
+cinematic letterbox bars are left out in VR. The camera rig never moves on its
+own to avoid walls, so in tight rooms you may see through a wall until you turn
+the rig with the right stick.
+
+VR limitations: water reflections are rendered from the flat camera.
 
 ## Compatibility and limitations
 

@@ -114,23 +114,5 @@ int main() {
   Pose panel = follow.panel(1.4f);
   Vec3 f = rotate(turned.q, {0, 0, -1});
   assert(near(panel.p.x, f.x * 1.4f, 1e-2f) && near(panel.p.z, f.z * 1.4f, 1e-2f));
-  // Collision pull-in: the head origin moves straight toward the anchor,
-  // quickly when blocked and slowly back out.
-  Rig pulled;
-  pulled.resetFraming();
-  pulled.anchor = {0, 0, 0};
-  Vec3 full = pulled.originWorld(1), half = pulled.originWorld(.5f);
-  assert(near(half.x, full.x * .5f, .01f) && near(half.z, full.z * .5f, .01f));
-  pulled.settlePull(.4f, 0.1f);
-  assert(pulled.pull < .5f);
-  float blocked = pulled.pull;
-  pulled.settlePull(1, 0.1f);
-  assert(pulled.pull > blocked && pulled.pull < .6f);
-  pulled.settlePull(.1f, 1);
-  assert(pulled.pull >= .35f); // Never into the character.
-  // Lifting raises the head origin while keeping its distance.
-  Vec3 level = pulled.originWorld(1, 0), raised = pulled.originWorld(1, .5f);
-  assert(raised.z > level.z);
-  assert(near(std::sqrt(dot(raised, raised)), std::sqrt(dot(level, level)), .5f));
   std::puts("vr_math_test passed");
 }

@@ -469,3 +469,12 @@ diorama scale, particles, rig collision in a corner, host recovery after the
 runtime restarts, VR-off flat regression. Not verified here: physical headset
 comfort/scale (VRUnitsPerMeter=100 guess), XInput gamepad in VR, SteamVR, outdoor
 areas/sky, native Windows.
+
+VR follow-up: rig collision removed at the user's request (no automatic camera
+movement near walls). Native fades (solid fade callers via 0x392750) and the
+iris (sprite caller 0x1df19b) drawn during the HUD are replayed onto the stereo
+scene target, shifted to each eye's centre and scissored to its half; eye images
+are now copied at Present so they include them. On the overlay the same draw uses
+SRCBLENDALPHA=ZERO/DESTBLENDALPHA=ONE so it darkens HUD elements without adding
+panel coverage. Letterbox bars are skipped in VR. Lab: the load fade-in darkens
+the whole headset view; the iris path is not yet observed in the lab.
