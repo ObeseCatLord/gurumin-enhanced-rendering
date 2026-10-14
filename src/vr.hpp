@@ -1113,23 +1113,17 @@ static int __cdecl vrCullHook(const float *center, const float *vp, float radius
 // Zone visibility follows the native look-at point. Draw-only gates are
 // opened in VR so every map zone renders; the zone table itself (also read by
 // collision) is untouched.
-static void vrPatchZones() {
-  struct Patch {
-    uintptr_t rva;
-    unsigned char original[6], replacement[6];
-    unsigned length;
-  };
-  static const Patch patches[] = {
-      {0x350ae6, {0x74, 0x9e}, {0x90, 0x90}, 2},
-      {0x35170e, {0x74, 0x9b}, {0x90, 0x90}, 2},
-      {0x351f4b, {0x74, 0xc8}, {0x90, 0x90}, 2},
-      {0x352946, {0x75, 0x14}, {0xeb, 0x14}, 2},
-      {0x1dcf3f, {0x0f, 0x84, 0xf0, 0x01, 0x00, 0x00}, {0x90, 0x90, 0x90, 0x90, 0x90, 0x90}, 6},
-  };
+struct VrPatch {
+  uintptr_t rva;
+  unsigned char original[6], replacement[6];
+  unsigned length;
+};
+// Byte-verified code patches: all or nothing per group.
+template <size_t N> static bool vrApplyPatches(const VrPatch (&patches)[N], const char *name) {
   for (const auto &p : patches)
     if (memcmp(reinterpret_cast<void *>(gameBase + p.rva), p.original, p.length)) {
-      log("VR zone gate RVA=%lx unexpected; zones left native", (unsigned long)p.rva);
-      return;
+      log("VR %s patch RVA=%lx unexpected; left native", name, (unsigned long)p.rva);
+      return false;
     }
   for (const auto &p : patches) {
     auto target = reinterpret_cast<void *>(gameBase + p.rva);
@@ -1141,7 +1135,29 @@ static void vrPatchZones() {
     VirtualProtect(target, p.length, old, &unused);
     FlushInstructionCache(GetCurrentProcess(), target, p.length);
   }
-  log("VR zone draw gates opened");
+  return true;
+}
+
+static void vrPatchZones() {
+  static const VrPatch patches[] = {
+      {0x350ae6, {0x74, 0x9e}, {0x90, 0x90}, 2},
+      {0x35170e, {0x74, 0x9b}, {0x90, 0x90}, 2},
+      {0x351f4b, {0x74, 0xc8}, {0x90, 0x90}, 2},
+      {0x352946, {0x75, 0x14}, {0xeb, 0x14}, 2},
+      {0x1dcf3f, {0x0f, 0x84, 0xf0, 0x01, 0x00, 0x00}, {0x90, 0x90, 0x90, 0x90, 0x90, 0x90}, 6},
+  };
+  if (vrApplyPatches(patches, "zone gate"))
+    log("VR zone draw gates opened");
+}
+
+// The main loop (0x7a2080) sleeps while the window is inactive
+// (0x21e8e7c == 0). In VR the headset is the display, so always run frames.
+static void vrPatchBackground() {
+  static const VrPatch patches[] = {
+      {0x3a20c0, {0x75, 0x0f}, {0xeb, 0x0f}, 2},
+  };
+  if (vrApplyPatches(patches, "background"))
+    log("VR keeps running without window focus");
 }
 
 static void vrInstallHooks() {
@@ -1157,4 +1173,5 @@ static void vrInstallHooks() {
   log("VR cull hook status=%d", status);
   if (vrConfig.drawAllZones)
     vrPatchZones();
+  vrPatchBackground();
 }
