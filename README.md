@@ -27,9 +27,7 @@ I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which 
 - Right stick free camera as an option. The game isn't made with it in mind, can look weird in town
 - Higher Resolution Shadows
 - FXAA
-- **Optional 6DoF VR (OpenXR)**: third-person VR with a camera rig that follows
-  Parin, life-size or diorama (tabletop) scale, gamepad or VR controllers.
-  Works on Windows and on Linux through Proton with Monado/WiVRn or SteamVR.
+- Optional third person VR support at either life size or diorama scales
 
 ## Install — copy into the game folder
 
