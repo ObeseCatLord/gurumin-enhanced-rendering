@@ -478,3 +478,26 @@ are now copied at Present so they include them. On the overlay the same draw use
 SRCBLENDALPHA=ZERO/DESTBLENDALPHA=ONE so it darkens HUD elements without adding
 panel coverage. Letterbox bars are skipped in VR. Lab: the load fade-in darkens
 the whole headset view; the iris path is not yet observed in the lab.
+
+Headset follow-up, 2026-10-14 (Bigscreen Beyond, Envision/Monado, GE-Proton10-34):
+- Black screen: the main loop sleeps while the window is inactive (0x7a20b9:
+  0x21e8e7c active flag) and the frame function skips its update while
+  0x909350 is clear (0x60c76a). Both waits are patched (byte-verified) in VR.
+  A covered Xwayland window throttled Present to ~13 fps, which made the
+  startup loading crawl; VR now skips the native Present (event-query flush
+  instead) unless VRDesktopMirror=1. Back buffer MSAA forced off in VR.
+- Culling: the view built at 0x1a992a (MainVP, NativeView) now comes from the
+  head (centre pose, pitch clamped to 75 degrees) with the main/alt projections
+  widened to the union eye FOV + 15 degrees, native depth terms kept; camera
+  eye/target globals point at the head during the scene pass.
+- Missing scenery (monster village "ksk"): every map model was drawn (draw-list
+  diff flat vs VR identical) but each draws only cells chosen from per-frame
+  camera copies 0x21ffed8 (eye) / 0x2200ee8 (target), written after the view
+  build. Pointing them at the head during the pass restores walls, buildings
+  and ground in every direction. Forcing the zone table (0x217fb08, rebuilt by
+  0x749b10 inside map draws) was tried and rejected: no visible gain and it
+  exposes pieces the game hides.
+- HUD drop (VRHudDrop, protocol ABI 2). Diorama rig 0.45 m / 0.25 m.
+- Desktop water reflection: pass 0x5dcea0 mirrors MainVP via 0x5c9750 (single
+  caller); the hook passes this frame's interpolated scene VP. Hook verified to
+  install; not yet observed on a water map.

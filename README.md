@@ -100,8 +100,8 @@ Both eyes are rendered in a single pass of the game's scene. Advanced options
 
 Linux / Proton notes:
 - Use DXVK (the Proton default); Proton's OpenXR bridge needs it.
-- For Monado/WiVRn add `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1` before
-  `%command%`, e.g.
+- If the game cannot find Monado/WiVRn, add
+  `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1` before `%command%`, e.g.
   `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 WINEDLLOVERRIDES="d3d9=n,b" %command%`.
 - Eye images go to the runtime without a CPU copy under Proton. Native Windows
   D3D9 cannot share them, so Windows uses a slower CPU copy (lower the
@@ -112,7 +112,12 @@ cinematic letterbox bars are left out in VR. The camera rig never moves on its
 own to avoid walls, so in tight rooms you may see through a wall until you turn
 the rig with the right stick.
 
-VR limitations: water reflections are rendered from the flat camera.
+The game keeps running when its window is not focused. While VR is active the
+desktop window is not updated (a covered window would be throttled by the
+compositor and slow the game); set `VRDesktopMirror=1` to mirror the eyes there.
+
+VR limitations: water reflections are rendered once, from the centre of your
+head, rather than per eye.
 
 ## Compatibility and limitations
 

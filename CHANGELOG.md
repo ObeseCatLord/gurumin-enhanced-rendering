@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 — 2026-10-13
+## 1.1.0 — 2026-10-14
 
 - Optional 6DoF OpenXR VR mode (default off; launcher toggle or `-vr`):
   third-person camera rig that follows Parin, Life size or Diorama scale,
@@ -16,6 +16,15 @@
   zero-copy DXVK shared images under Proton, CPU copy on native Windows; host
   restarts automatically if the runtime starts later or stops.
 - Optional installer manages the `GuruminVR` files and adopts a copied release.
+- The game keeps running in VR without window focus, and skips the desktop
+  window by default (`VRDesktopMirror=1` restores it) so a covered window can
+  no longer throttle the headset. Back buffer MSAA is unused in VR and disabled.
+- Culling and map cell selection follow the headset: the native camera used
+  for visibility is the head with a frustum covering both eyes, so scenery such
+  as the monster village is complete in every direction.
+- HUD panel sits slightly below the gaze (`VRHudDrop`, 7°); diorama rig closer.
+- Desktop: water reflections follow the interpolated camera instead of stepping
+  at the 30 Hz camera tick at high frame rates.
 
 ## 1.0.4 — 2026-10-08
 
