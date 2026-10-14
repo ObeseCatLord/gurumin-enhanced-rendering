@@ -24,6 +24,7 @@ struct VrConfig {
   float renderScale = 1;
   int maxEye = 3072;
   bool singlePass = true, drawAllZones = true, zeroCopy = true;
+  bool desktopMirror = false; // Also present to the desktop window.
   float hudDistance = 1.4f, hudWidth = 1.5f;
   float screenDistance = 2.2f, screenWidth = 2.4f;
 };
@@ -41,6 +42,7 @@ struct VrImages {
   IDirect3DTexture9 *texture[2][gurumin::vr::ImageCount]{};
   IDirect3DSurface9 *surface[2][gurumin::vr::ImageCount]{};
   IDirect3DQuery9 *fence[2]{};
+  IDirect3DQuery9 *flush = nullptr; // Submits work when Present is skipped.
   IDirect3DSurface9 *readbackEye = nullptr, *readbackHud = nullptr;
   IDirect3DTexture9 *overlay = nullptr; // Full-size HUD capture target.
   IDirect3DSurface9 *overlaySurface = nullptr;
@@ -97,10 +99,10 @@ static void loadVrConfig() {
   auto &r = vrConfig.rig;
   r.unitsPerMeter = vrIniFloat("VRUnitsPerMeter", 100, 1, 10000);
   r.dioramaScale = vrIniFloat("VRDioramaScale", 12, 1, 200);
-  r.lifeDistance = vrIniFloat("VRLifeDistance", 2.2f, 0, 20);
-  r.lifeHeight = vrIniFloat("VRLifeHeight", 1.5f, -5, 20);
-  r.dioramaDistance = vrIniFloat("VRDioramaDistance", .8f, 0, 5);
-  r.dioramaHeight = vrIniFloat("VRDioramaHeight", .45f, -2, 5);
+  r.lifeDistance = vrIniFloat("VRLifeDistance", 1.4f, 0, 20);
+  r.lifeHeight = vrIniFloat("VRLifeHeight", .9f, -5, 20);
+  r.dioramaDistance = vrIniFloat("VRDioramaDistance", .45f, 0, 5);
+  r.dioramaHeight = vrIniFloat("VRDioramaHeight", .25f, -2, 5);
   r.snapTurn = readInt("VRSnapTurn", 0) != 0;
   r.diorama = modernSettings.vrScale == 1;
   r.invertX = modernSettings.invertX;
@@ -113,6 +115,7 @@ static void loadVrConfig() {
   vrConfig.singlePass = readInt("VRSinglePass", 1) != 0;
   vrConfig.drawAllZones = readInt("VRDrawAllZones", 1) != 0;
   vrConfig.zeroCopy = readInt("VRZeroCopy", 1) != 0;
+  vrConfig.desktopMirror = readInt("VRDesktopMirror", 0) != 0;
   vrConfig.hudDistance = vrIniFloat("VRHudDistance", 1.4f, .3f, 10);
   vrConfig.hudWidth = vrIniFloat("VRHudWidth", 1.5f, .1f, 10);
   vrConfig.screenDistance = vrIniFloat("VRScreenDistance", 2.2f, .3f, 20);
@@ -269,6 +272,7 @@ static void vrReleaseImages() {
       release(t);
   for (auto &f : vrImages.fence)
     release(f);
+  release(vrImages.flush);
   release(vrImages.readbackEye);
   release(vrImages.readbackHud);
   release(vrImages.overlaySurface);
@@ -860,6 +864,23 @@ static void vrPublish(IDirect3DDevice9 *d, bool world) {
   bool ok = source && SUCCEEDED(d->StretchRect(source, &crop,
                                               vrImages.surface[slot][HudImage], nullptr,
                                               D3DTEXF_LINEAR));
+  // Debug probe ("GuruminVR\\probe" exists): save the published source and
+  // its HUD/screen copy every 300 frames.
+  static int probing = -1;
+  if (probing < 0)
+    probing = GetFileAttributesA("GuruminVR\\probe") != INVALID_FILE_ATTRIBUTES;
+  if (probing && frames % 300 == 0 && source) {
+    using SaveFn = HRESULT(WINAPI *)(const char *, int, IDirect3DSurface9 *, const void *,
+                                     const RECT *);
+    if (HMODULE d3dx = GetModuleHandleA("d3dx9_43.dll"))
+      if (auto save = reinterpret_cast<SaveFn>(reinterpret_cast<void *>(GetProcAddress(d3dx, "D3DXSaveSurfaceToFileA")))) {
+        HRESULT a = save("GuruminVR\\probe-game-source.bmp", 0, source, nullptr, nullptr);
+        HRESULT b = save("GuruminVR\\probe-game-copy.bmp", 0,
+                         vrImages.surface[slot][HudImage], nullptr, nullptr);
+        log("VR probe frame=%u world=%d copy=%d save=%08lx/%08lx", frames, int(world), int(ok),
+            (unsigned long)a, (unsigned long)b);
+      }
+  }
   if (source)
     source->Release();
   bool zero = false;
@@ -953,7 +974,7 @@ static void vrBeforePresent(IDirect3DDevice9 *d) {
     vrClaim();
   if (vrFrameSlot >= 0 && vrImages.ready)
     vrPublish(d, world);
-  if (world)
+  if (world && vrConfig.desktopMirror)
     vrMirror(d);
   if (vrSceneSurface) {
     vrSceneSurface->Release();
@@ -965,10 +986,26 @@ static void vrBeforePresent(IDirect3DDevice9 *d) {
   }
   vrHudRedirected = vrPassRan = false;
   vrPublishGameState();
-  if (diagnostics && frames % 600 == 0)
+  static unsigned statLines;
+  if ((diagnostics || statLines < 20) && frames % 600 == 0 && ++statLines)
     log("VR stats frame=%u rootCalls=%u passes=%u blits=%u redirects=%u world=%u screen=%u "
         "unscoped=%u", frames, vrStatRootCalls, vrStatPasses, vrStatBlits, vrStatRedirects,
         vrStatWorld, vrStatScreen, vrUnscopedDraws);
+}
+
+// While the headset shows the game, the desktop window is optional: a
+// compositor throttles hidden or covered windows, and a blocking Present
+// would then slow the whole game. Skip it and only submit the frame's work.
+static bool vrSkipPresent(IDirect3DDevice9 *d) {
+  if (!vrSession || !supported || vrConfig.desktopMirror || !vrImages.ready ||
+      !vrHostConnected())
+    return false;
+  if (!vrImages.flush && FAILED(d->CreateQuery(D3DQUERYTYPE_EVENT, &vrImages.flush)))
+    return false;
+  vrImages.flush->Issue(D3DISSUE_END);
+  BOOL done = FALSE;
+  vrImages.flush->GetData(&done, sizeof(done), D3DGETDATA_FLUSH);
+  return true;
 }
 
 // Pace the game to the headset: wait for the host's next request.
@@ -1150,11 +1187,13 @@ static void vrPatchZones() {
     log("VR zone draw gates opened");
 }
 
-// The main loop (0x7a2080) sleeps while the window is inactive
-// (0x21e8e7c == 0). In VR the headset is the display, so always run frames.
+// Without window focus the main loop (0x7a2080) sleeps and the frame
+// function (0x60c750) skips its update while the active flag 0x909350 is
+// clear. In VR the headset is the display, so always run full frames.
 static void vrPatchBackground() {
   static const VrPatch patches[] = {
       {0x3a20c0, {0x75, 0x0f}, {0xeb, 0x0f}, 2},
+      {0x20c76a, {0x75, 0x13}, {0xeb, 0x13}, 2},
   };
   if (vrApplyPatches(patches, "background"))
     log("VR keeps running without window focus");

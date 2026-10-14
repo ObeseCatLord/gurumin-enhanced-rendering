@@ -25,6 +25,7 @@ static const float *vrRegionMatrix(int region, const float *nativeMatrix);
 static bool vrBlit(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
 static void vrBeforePresent(IDirect3DDevice9 *);
 static void vrAfterPresent();
+static bool vrSkipPresent(IDirect3DDevice9 *);
 static void vrDeviceCreated(IDirect3DDevice9 *);
 static void vrDeviceLost();
 static bool vrSceneRoot(void (__cdecl *native)());

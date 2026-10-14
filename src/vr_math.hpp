@@ -101,8 +101,8 @@ inline void viewMatrix(Vec3 position, Vec3 right, Vec3 up, Vec3 forward,
 struct RigConfig {
   float unitsPerMeter = 100;   // Game units per real metre at life size.
   float dioramaScale = 12;     // Diorama shrinks the world by this factor.
-  float lifeDistance = 2.2f, lifeHeight = 1.5f;
-  float dioramaDistance = .8f, dioramaHeight = .45f;
+  float lifeDistance = 1.4f, lifeHeight = .9f;
+  float dioramaDistance = .45f, dioramaHeight = .25f;
   float yawSpeed = 120 * Pi / 180;   // rad/s at full stick
   float elevationSpeed = 60 * Pi / 180;
   float horizontalTime = .06f, verticalTime = .35f; // anchor smoothing (s)

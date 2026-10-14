@@ -1088,6 +1088,15 @@ struct Host {
     }
     // Copies from shared images must finish before the game may render into
     // them again, which it can as soon as this thread requests the slot.
+    if ((world || overlay) && probeDue()) {
+      lastProbe = GetTickCount64();
+      if (world)
+        probe(eye[0].target(), "eye0");
+      if (overlay)
+        probe(hud.target(), content & Screen ? "screen" : "hud");
+      if (overlay && zero)
+        probe(sharedImage[candidate][HudImage].p, "overlay-source");
+    }
     if ((world || overlay) && zero && !drainGpu())
       throw std::runtime_error("Shared image copy did not complete");
     if (world) {
@@ -1146,6 +1155,59 @@ struct Host {
         outstanding[i] = {true, deadline, request.sequence};
         return;
       }
+  }
+  // Debug probe, enabled by a "probe" file beside the host: every 5 s log the
+  // mean colour of the images sent to the runtime and save them as BMPs.
+  ULONGLONG lastProbe = 0;
+  int probing = -1;
+  bool probeDue() {
+    if (probing < 0)
+      probing = GetFileAttributesW((executableDirectory() + L"probe").c_str()) !=
+                INVALID_FILE_ATTRIBUTES;
+    return probing && GetTickCount64() - lastProbe >= 5000;
+  }
+  void probe(ID3D11Texture2D *source, const char *name) {
+    D3D11_TEXTURE2D_DESC d{};
+    source->GetDesc(&d);
+    d.Usage = D3D11_USAGE_STAGING;
+    d.BindFlags = 0;
+    d.MiscFlags = 0;
+    d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    Com<ID3D11Texture2D> staging;
+    if (FAILED(device->CreateTexture2D(&d, nullptr, staging.put())))
+      return log.format("probe %s: staging failed", name);
+    context->CopyResource(staging.p, source);
+    D3D11_MAPPED_SUBRESOURCE m{};
+    if (FAILED(context->Map(staging.p, 0, D3D11_MAP_READ, 0, &m)))
+      return log.format("probe %s: map failed", name);
+    double sum[4]{};
+    uint64_t count = 0;
+    for (UINT y = 0; y < d.Height; y += 8)
+      for (UINT x = 0; x < d.Width; x += 8, ++count) {
+        auto px = static_cast<const uint8_t *>(m.pData) + y * m.RowPitch + x * 4;
+        for (int c = 0; c < 4; ++c)
+          sum[c] += px[c];
+      }
+    log.format("probe %s %ux%u fmt=%u mean b=%.1f g=%.1f r=%.1f a=%.1f", name, d.Width,
+               d.Height, unsigned(d.Format), sum[0] / count, sum[1] / count, sum[2] / count,
+               sum[3] / count);
+    std::wstring path = executableDirectory() + L"probe-" +
+                        std::wstring(name, name + std::strlen(name)) + L".bmp";
+    Handle file;
+    file.h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file.h != INVALID_HANDLE_VALUE) {
+      BITMAPINFOHEADER info{sizeof(info), LONG(d.Width), -LONG(d.Height), 1, 32, BI_RGB};
+      BITMAPFILEHEADER header{0x4d42, DWORD(sizeof(BITMAPFILEHEADER) + sizeof(info) + d.Width * d.Height * 4),
+                              0, 0, DWORD(sizeof(BITMAPFILEHEADER) + sizeof(info))};
+      DWORD n;
+      WriteFile(file.h, &header, sizeof(header), &n, nullptr);
+      WriteFile(file.h, &info, sizeof(info), &n, nullptr);
+      for (UINT y = 0; y < d.Height; ++y)
+        WriteFile(file.h, static_cast<const uint8_t *>(m.pData) + y * m.RowPitch, d.Width * 4, &n,
+                  nullptr);
+    }
+    context->Unmap(staging.p, 0);
   }
   void diagnostics() {
     ULONGLONG now = GetTickCount64();
@@ -1226,6 +1288,11 @@ struct Host {
           quad.pose = xrPose(follow.panel(game.screenDistance));
           quad.size = {width, width * hud.height / float(hud.width)};
           layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad));
+          if (probing > 0 && frames % 500 == 0)
+            log.format("screen quad pos=%.2f,%.2f,%.2f size=%.2fx%.2f head=%.2f,%.2f,%.2f",
+                       quad.pose.position.x, quad.pose.position.y, quad.pose.position.z,
+                       quad.size.width, quad.size.height, input.head.p.x, input.head.p.y,
+                       input.head.p.z);
         } else {
           if (cachedWorld && eye[0].ownership.previousImageAvailable() &&
               eye[1].ownership.previousImageAvailable()) {

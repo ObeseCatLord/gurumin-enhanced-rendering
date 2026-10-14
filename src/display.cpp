@@ -1408,7 +1408,7 @@ static HRESULT WINAPI presentHook(IDirect3DDevice9 *d, const RECT *a,
         supported ? game<unsigned>(0x1de47f8) : 0);
   }
   vrBeforePresent(d);
-  HRESULT result = present(d, a, b, w, r);
+  HRESULT result = vrSkipPresent(d) ? D3D_OK : present(d, a, b, w, r);
   paceAfterPresent(result);
   vrAfterPresent();
   return result;
@@ -1893,6 +1893,10 @@ static HRESULT WINAPI resetHook(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
   // the headset, never by the desktop refresh.
   if (supported && (modernSettings.frameCap < 0 || vrSession))
     p->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+  if (supported && vrSession) {
+    p->MultiSampleType = D3DMULTISAMPLE_NONE;
+    p->MultiSampleQuality = 0;
+  }
   framePacer.reset();
   sceneAA.reset();
   resetCameraControls();
@@ -1926,9 +1930,16 @@ static HRESULT WINAPI deviceHook(IDirect3D9 *d, UINT a, D3DDEVTYPE type, HWND w,
   // the headset, never by the desktop refresh.
   if (supported && (modernSettings.frameCap < 0 || vrSession))
     p->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-  log("CreateDevice %ux%u windowed=%d refresh=%u interval=%u",
+  log("CreateDevice %ux%u windowed=%d refresh=%u interval=%u msaa=%u",
       p->BackBufferWidth, p->BackBufferHeight, p->Windowed,
-      p->FullScreen_RefreshRateInHz, p->PresentationInterval);
+      p->FullScreen_RefreshRateInHz, p->PresentationInterval, unsigned(p->MultiSampleType));
+  // VR copies the back buffer (screens) with StretchRect, which cannot
+  // resample a multisampled surface; the headset never shows it anyway.
+  if (supported && vrSession && p->MultiSampleType != D3DMULTISAMPLE_NONE) {
+    p->MultiSampleType = D3DMULTISAMPLE_NONE;
+    p->MultiSampleQuality = 0;
+    log("VR: back buffer MSAA disabled");
+  }
   HRESULT h = createDevice(d, a, type, w, flags, p, out);
   if (FAILED(h) && supported &&
       gurumin::validResolution(modernSettings.resolution)) {
