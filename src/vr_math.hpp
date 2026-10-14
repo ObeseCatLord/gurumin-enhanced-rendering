@@ -101,7 +101,7 @@ inline void viewMatrix(Vec3 position, Vec3 right, Vec3 up, Vec3 forward,
 struct RigConfig {
   float unitsPerMeter = 100;   // Game units per real metre at life size.
   float dioramaScale = 12;     // Diorama shrinks the world by this factor.
-  float lifeDistance = 1.4f, lifeHeight = .9f;
+  float lifeDistance = 2.2f, lifeHeight = 1.5f;
   float dioramaDistance = .45f, dioramaHeight = .25f;
   float yawSpeed = 120 * Pi / 180;   // rad/s at full stick
   float elevationSpeed = 60 * Pi / 180;
@@ -258,8 +258,9 @@ struct SoftFollow {
     pitch += (targetPitch - pitch) * a;
     position = position + (head.p - position) * p;
   }
-  Pose panel(float distance) const {
-    Quat q = normalize(yawRotation(yaw) * pitchRotation(pitch));
+  // `drop` pitches the panel below the followed gaze (radians).
+  Pose panel(float distance, float drop = 0) const {
+    Quat q = normalize(yawRotation(yaw) * pitchRotation(pitch - drop));
     return {q, position + rotate(q, {0, 0, -distance})};
   }
 };

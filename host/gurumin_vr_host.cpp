@@ -1315,7 +1315,8 @@ struct Host {
             quad.space = local;
             quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
             quad.subImage = hud.subimage();
-            quad.pose = xrPose(follow.panel(game.hudDistance));
+            quad.pose = xrPose(follow.panel(game.hudDistance,
+                                             game.hudDropDegrees * gurumin::vr::Pi / 180));
             quad.size = {width, width * hud.height / float(hud.width)};
             layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad));
           }

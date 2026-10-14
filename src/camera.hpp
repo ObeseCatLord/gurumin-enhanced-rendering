@@ -267,6 +267,11 @@ static float *__cdecl cameraViewHook(float *out,CameraVector eye,
       !memcmp(target.v,orbitRenderPose.nativeTarget.v,16);
   // By-value substitution leaves the caller's stack vectors untouched. It
   // later commits those original vectors back to native carry state.
+  if(caller==0x1a992a && vrSession && !use) {
+    CameraVector headEye=eye,headTarget=target;
+    if(vrCullingPose(headEye.v,headTarget.v))
+      return nativeCameraView(out,headEye,headTarget,axes,roll);
+  }
   float *result=nativeCameraView(out,use?orbitRenderPose.eye:eye,
       use?orbitRenderPose.target:target,axes,roll);
   if(use && result) {

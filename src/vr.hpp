@@ -25,7 +25,7 @@ struct VrConfig {
   int maxEye = 3072;
   bool singlePass = true, drawAllZones = true, zeroCopy = true;
   bool desktopMirror = false; // Also present to the desktop window.
-  float hudDistance = 1.4f, hudWidth = 1.5f;
+  float hudDistance = 1.4f, hudWidth = 1.5f, hudDrop = 7;
   float screenDistance = 2.2f, screenWidth = 2.4f;
 };
 static VrConfig vrConfig;
@@ -99,8 +99,8 @@ static void loadVrConfig() {
   auto &r = vrConfig.rig;
   r.unitsPerMeter = vrIniFloat("VRUnitsPerMeter", 100, 1, 10000);
   r.dioramaScale = vrIniFloat("VRDioramaScale", 12, 1, 200);
-  r.lifeDistance = vrIniFloat("VRLifeDistance", 1.4f, 0, 20);
-  r.lifeHeight = vrIniFloat("VRLifeHeight", .9f, -5, 20);
+  r.lifeDistance = vrIniFloat("VRLifeDistance", 2.2f, 0, 20);
+  r.lifeHeight = vrIniFloat("VRLifeHeight", 1.5f, -5, 20);
   r.dioramaDistance = vrIniFloat("VRDioramaDistance", .45f, 0, 5);
   r.dioramaHeight = vrIniFloat("VRDioramaHeight", .25f, -2, 5);
   r.snapTurn = readInt("VRSnapTurn", 0) != 0;
@@ -117,6 +117,7 @@ static void loadVrConfig() {
   vrConfig.zeroCopy = readInt("VRZeroCopy", 1) != 0;
   vrConfig.desktopMirror = readInt("VRDesktopMirror", 0) != 0;
   vrConfig.hudDistance = vrIniFloat("VRHudDistance", 1.4f, .3f, 10);
+  vrConfig.hudDrop = vrIniFloat("VRHudDrop", 7, -45, 45);
   vrConfig.hudWidth = vrIniFloat("VRHudWidth", 1.5f, .1f, 10);
   vrConfig.screenDistance = vrIniFloat("VRScreenDistance", 2.2f, .3f, 20);
   vrConfig.screenWidth = vrIniFloat("VRScreenWidth", 2.4f, .1f, 20);
@@ -582,6 +583,78 @@ static bool vrComputeRegions(const gurumin::vr::Request &request) {
   return true;
 }
 
+// Native culling camera. The game derives its frustum, distance and zone
+// tests from one camera (view built at 0x1a992a, VP right after). In VR that
+// camera becomes the head: centre view, with a projection widened to cover
+// both eyes plus a margin. The authored camera state itself is untouched.
+static float vrWideMain[16], vrWideAlt[16], vrNativeMain[16], vrNativeAlt[16];
+static bool vrWidenedMain, vrWidenedAlt;
+static float vrCullEye[4], vrCullTarget[4];
+static bool vrCullPoseValid;
+static void vrRestoreProjection() {
+  auto restore = [](uintptr_t rva, bool &widened, const float *wide, const float *native) {
+    auto m = reinterpret_cast<float *>(gameBase + rva);
+    if (widened && !memcmp(m, wide, 64))
+      memcpy(m, native, 64);
+    widened = false;
+  };
+  restore(vrconst::MainProjection, vrWidenedMain, vrWideMain, vrNativeMain);
+  restore(vrconst::AltProjection, vrWidenedAlt, vrWideAlt, vrNativeAlt);
+}
+static void vrWidenProjection(const gurumin::vr::Fov (&fov)[2]) {
+  constexpr float margin = 15 * gurumin::vr::Pi / 180, limit = 80 * gurumin::vr::Pi / 180;
+  gurumin::vr::Fov wide{std::max(std::min(fov[0].left, fov[1].left) - margin, -limit),
+                        std::min(std::max(fov[0].right, fov[1].right) + margin, limit),
+                        std::min(std::max(fov[0].up, fov[1].up) + margin, limit),
+                        std::max(std::min(fov[0].down, fov[1].down) - margin, -limit)};
+  auto widen = [&](uintptr_t rva, bool &widened, float *out, float *native) {
+    auto m = reinterpret_cast<float *>(gameBase + rva);
+    // Capture the native projection unless it is still our own widening.
+    if (!widened || memcmp(m, out, 64))
+      memcpy(native, m, 64);
+    if (native[11] != 1.f || native[15] != 0.f ||
+        !gurumin::vr::projection(wide, native[10], native[14], out)) {
+      if (widened && !memcmp(m, out, 64))
+        memcpy(m, native, 64);
+      widened = false;
+      return;
+    }
+    memcpy(m, out, 64);
+    widened = true;
+  };
+  widen(vrconst::MainProjection, vrWidenedMain, vrWideMain, vrNativeMain);
+  widen(vrconst::AltProjection, vrWidenedAlt, vrWideAlt, vrNativeAlt);
+}
+static bool vrCullingPose(float *eye, float *target) {
+  using namespace gurumin::vr;
+  vrCullPoseValid = false;
+  if (!vrSession || !supported || !vrImages.ready || !vrHaveRequest || !vrRig.recentered ||
+      !vrHeadValid || !vrLastEyesValid || !vrHostConnected() || manualBookActive()) {
+    vrRestoreProjection();
+    return false;
+  }
+  Vec3 position = vrRig.worldPosition(vrLastHead.p);
+  Vec3 forward = vrRig.direction(rotate(vrRig.recenterRotation(vrLastHead.q), {0, 0, -1}));
+  float horizontal = std::hypot(forward.x, forward.y);
+  // Keep the look-at well-defined; the widened frustum covers the rest.
+  float pitch = std::clamp(std::atan2(forward.z, horizontal), -75 * Pi / 180, 75 * Pi / 180);
+  float yaw = horizontal > 1e-4f ? std::atan2(forward.y, forward.x) : vrRig.yaw;
+  forward = {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
+  float distance = std::hypot(target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]);
+  if (!std::isfinite(distance) || distance < 1)
+    distance = 100;
+  if (!finite(position))
+    return false;
+  Vec3 aim = position + forward * distance;
+  eye[0] = position.x, eye[1] = position.y, eye[2] = position.z;
+  target[0] = aim.x, target[1] = aim.y, target[2] = aim.z;
+  memcpy(vrCullEye, eye, 16);
+  memcpy(vrCullTarget, target, 16);
+  vrWidenProjection(vrLastRequest.fov);
+  vrCullPoseValid = true;
+  return true;
+}
+
 // Scene root (RVA 0x1d3360): one traversal for both eyes, or two traversals
 // with VRSinglePass=0. Returns false to let the native scene render flat.
 static bool vrSceneRoot(void(__cdecl *native)()) {
@@ -602,6 +675,17 @@ static bool vrSceneRoot(void(__cdecl *native)()) {
   game<int>(vrconst::SceneShrinkX) = 0;
   game<int>(vrconst::SceneShrinkY) = 0;
   unsigned unscoped = vrUnscopedDraws;
+  // Draw-time distance and zone tests read the camera position globals.
+  auto cameraEye = reinterpret_cast<float *>(gameBase + vrconst::CameraEye);
+  auto cameraTarget = reinterpret_cast<float *>(gameBase + vrconst::CameraTarget);
+  float savedEye[4], savedTarget[4];
+  bool swapped = vrCullPoseValid;
+  if (swapped) {
+    memcpy(savedEye, cameraEye, 16);
+    memcpy(savedTarget, cameraTarget, 16);
+    memcpy(cameraEye, vrCullEye, 12);
+    memcpy(cameraTarget, vrCullTarget, 12);
+  }
   if (vrConfig.singlePass) {
     vrPass = true;
     native();
@@ -616,6 +700,10 @@ static bool vrSceneRoot(void(__cdecl *native)()) {
     }
   game<int>(vrconst::SceneShrinkX) = shrinkX;
   game<int>(vrconst::SceneShrinkY) = shrinkY;
+  if (swapped && !memcmp(cameraEye, vrCullEye, 12) && !memcmp(cameraTarget, vrCullTarget, 12)) {
+    memcpy(cameraEye, savedEye, 16);
+    memcpy(cameraTarget, savedTarget, 16);
+  }
   vrPassRan = true;
   vrPassFrame = frames;
   ++vrStatPasses;
@@ -941,6 +1029,7 @@ static void vrPublishGameState() {
   g.hudHeight = vrHudHeight;
   g.scaleMode = vrConfig.rig.diorama;
   g.hudDistance = vrConfig.hudDistance;
+  g.hudDropDegrees = vrConfig.hudDrop;
   g.hudWidthMeters = vrConfig.hudWidth;
   g.screenDistance = vrConfig.screenDistance;
   g.screenWidthMeters = vrConfig.screenWidth;

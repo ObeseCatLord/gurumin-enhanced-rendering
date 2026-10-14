@@ -8,7 +8,7 @@
 
 namespace gurumin::vr {
 constexpr uint32_t Magic = 0x52565247; // "GRVR"
-constexpr uint32_t Abi = 1;
+constexpr uint32_t Abi = 2;
 constexpr uint32_t MaxDimension = 8192;
 // Per slot: left eye, right eye, then the HUD / flat screen image.
 constexpr unsigned ImageCount = 3;
@@ -89,6 +89,7 @@ struct GameState {
            hudHeight = 0, scaleMode = 0;
   float hudDistance = 1.4f, hudWidthMeters = 1.1f;
   float screenDistance = 2.2f, screenWidthMeters = 2.4f;
+  float hudDropDegrees = 0, reserved = 0; // HUD below the gaze
 };
 struct Shared {
   uint32_t magic = Magic, abi = Abi, bytes = sizeof(Shared), gamePid = 0;
@@ -105,10 +106,10 @@ static_assert(sizeof(Input) == 104 && offsetof(Input, head) == 32);
 static_assert(sizeof(Request) == 224 && offsetof(Request, input) == 120);
 static_assert(sizeof(Slot) == 248 && offsetof(Slot, request) == 24);
 static_assert(sizeof(SharedImages) == 48 && sizeof(PixelSections) == 24);
-static_assert(sizeof(GameState) == 48);
+static_assert(sizeof(GameState) == 56);
 static_assert(offsetof(Shared, latest) == 32 && offsetof(Shared, slot) == 136 &&
               offsetof(Shared, images) == 640 &&
-              offsetof(Shared, game) == 712 && sizeof(Shared) == 760);
+              offsetof(Shared, game) == 712 && sizeof(Shared) == 768);
 static_assert(std::is_trivially_copyable_v<Shared> &&
               std::is_standard_layout_v<Shared>);
 

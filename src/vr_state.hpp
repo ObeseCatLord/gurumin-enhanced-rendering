@@ -29,6 +29,8 @@ static bool vrSkipPresent(IDirect3DDevice9 *);
 static void vrDeviceCreated(IDirect3DDevice9 *);
 static void vrDeviceLost();
 static bool vrSceneRoot(void (__cdecl *native)());
+// Moves the native camera (view build at 0x1a992a) to the VR head.
+static bool vrCullingPose(float *eye, float *target);
 static void vrInputOverlay(int *state);
 static int vrFadeDepth, vrBarDepth; // Native fullscreen fade / cinematic bars.
 static HRESULT vrFadeEyes(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
