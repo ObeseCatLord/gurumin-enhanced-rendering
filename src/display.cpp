@@ -697,6 +697,46 @@ static bool smoothCamera(const float *packed, float *result) {
   }
   return true;
 }
+// The interpolated main scene VP for this frame (row layout), computed now if
+// the frame's first scene draw has not happened yet.
+static bool smoothedMainVP(float *out) {
+  auto main = reinterpret_cast<const float *>(gameBase + 0x9a7900);
+  if (cameraFrame == frames && !memcmp(cameraNative, main, 64)) {
+    memcpy(out, cameraRendered, 64);
+    return true;
+  }
+  float packed[16], result[16];
+  for (int row = 0; row < 4; ++row)
+    for (int col = 0; col < 4; ++col)
+      packed[row * 4 + col] = main[col * 4 + row];
+  auto oldView = drawingView;
+  drawingView = main;
+  bool ok = smoothCamera(packed, result);
+  drawingView = oldView;
+  if (ok)
+    for (int row = 0; row < 4; ++row)
+      for (int col = 0; col < 4; ++col)
+        out[row * 4 + col] = result[col * 4 + row];
+  return ok;
+}
+// Water reflection (pass 0x1dcea0): 0x1c9750 mirrors the main scene VP about
+// the water plane. Mirror the interpolated camera so reflections move with
+// the rest of the scene instead of stepping at the 30 Hz camera tick.
+using ReflectionMatrixFn = void *(__cdecl *)(float *, const float *);
+static ReflectionMatrixFn reflectionMatrix;
+static void *__cdecl reflectionMatrixHook(float *out, const float *vp) {
+  float smooth[16];
+  if (interpolateMotion && !vrSession &&
+      vp == reinterpret_cast<const float *>(gameBase + 0x9a7900) && smoothedMainVP(smooth)) {
+    static bool logged;
+    if (!logged) {
+      logged = true;
+      log("Water reflection follows the interpolated camera");
+    }
+    return reflectionMatrix(out, smooth);
+  }
+  return reflectionMatrix(out, vp);
+}
 static bool filterDrawArguments(const float *world, const float *view,
                                 float *outWorld, float *outView,unsigned mode) {
   if (!world || !view)
@@ -1265,6 +1305,10 @@ static void installNativeHooks() {
   nativeHookFailure |= MH_CreateHook(reinterpret_cast<void*>(gameBase+0x1e27f0),
       reinterpret_cast<void*>(bubblePanelHook),reinterpret_cast<void**>(&bubblePanel))!=MH_OK;
   nativeHook(0x3a4360, skinHook, uploadSkin);
+  log("Reflection camera hook status=%d",
+      MH_CreateHook(reinterpret_cast<void *>(gameBase + 0x1c9750),
+                    reinterpret_cast<void *>(reflectionMatrixHook),
+                    reinterpret_cast<void **>(&reflectionMatrix)));
   auto ss = MH_CreateHook(reinterpret_cast<void *>(gameBase + 0x38ae20),
                           reinterpret_cast<void *>(spriteHook),
                           reinterpret_cast<void **>(&sprite));

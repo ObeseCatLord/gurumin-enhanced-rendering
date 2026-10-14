@@ -12,6 +12,8 @@ constexpr uintptr_t MainVP = 0x9a7900, AltVP = 0x9a9c00, NativeView = 0x9a9b00;
 constexpr uintptr_t MainProjection = 0x9ac940, AltProjection = 0x975d18;
 constexpr uintptr_t PlayerPosition = 0x108a348; // actor[0] world translation
 constexpr uintptr_t CameraEye = 0x1cf17a0, CameraTarget = 0x198f690;
+// Per-frame copies made after the view build (0x1a9a1c); map draws read them.
+constexpr uintptr_t FrameEye = 0x1dffed8, FrameTarget = 0x1e00ee8;
 constexpr uintptr_t SceneShrinkX = 0x1de8d58, SceneShrinkY = 0x1de8d5c;
 constexpr uintptr_t UseGamepad = 0x1df37c8, XInputModule = 0x1e280d4,
                     DInputDevice = 0x1e280e8;
@@ -678,13 +680,19 @@ static bool vrSceneRoot(void(__cdecl *native)()) {
   // Draw-time distance and zone tests read the camera position globals.
   auto cameraEye = reinterpret_cast<float *>(gameBase + vrconst::CameraEye);
   auto cameraTarget = reinterpret_cast<float *>(gameBase + vrconst::CameraTarget);
-  float savedEye[4], savedTarget[4];
+  auto frameEye = reinterpret_cast<float *>(gameBase + vrconst::FrameEye);
+  auto frameTarget = reinterpret_cast<float *>(gameBase + vrconst::FrameTarget);
+  float savedEye[4], savedTarget[4], savedFrameEye[4], savedFrameTarget[4];
   bool swapped = vrCullPoseValid;
   if (swapped) {
     memcpy(savedEye, cameraEye, 16);
     memcpy(savedTarget, cameraTarget, 16);
+    memcpy(savedFrameEye, frameEye, 16);
+    memcpy(savedFrameTarget, frameTarget, 16);
     memcpy(cameraEye, vrCullEye, 12);
     memcpy(cameraTarget, vrCullTarget, 12);
+    memcpy(frameEye, vrCullEye, 12);
+    memcpy(frameTarget, vrCullTarget, 12);
   }
   if (vrConfig.singlePass) {
     vrPass = true;
@@ -703,6 +711,10 @@ static bool vrSceneRoot(void(__cdecl *native)()) {
   if (swapped && !memcmp(cameraEye, vrCullEye, 12) && !memcmp(cameraTarget, vrCullTarget, 12)) {
     memcpy(cameraEye, savedEye, 16);
     memcpy(cameraTarget, savedTarget, 16);
+  }
+  if (swapped && !memcmp(frameEye, vrCullEye, 12) && !memcmp(frameTarget, vrCullTarget, 12)) {
+    memcpy(frameEye, savedFrameEye, 16);
+    memcpy(frameTarget, savedFrameTarget, 16);
   }
   vrPassRan = true;
   vrPassFrame = frames;
