@@ -2,7 +2,7 @@
 
 [![Gurumin Enhanced Rendering gameplay preview: ultrawide rendering, proportional HUD and free camera](docs/media/preview.gif)](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/docs/media/showcase.mp4)
 
-[![Gurumin Enhanced Rendering VR preview: headset view in diorama scale](docs/media/vr-preview.gif)](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/docs/media/vr-showcase.mp4)
+[![Gurumin Enhanced Rendering VR preview: headset view in diorama scale](docs/media/vr-preview-house.gif)](https://github.com/ObeseCatLord/gurumin-enhanced-rendering/blob/main/docs/media/vr-showcase.mp4)
 
 A rendering and camera mod for **Gurumin: A Monstrous Adventure**, Steam version
 1.4. I don't know if this works on the GOG version.
