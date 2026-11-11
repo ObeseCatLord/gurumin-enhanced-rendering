@@ -29,7 +29,7 @@ I recommend mods from [Tenome](https://github.com/Tenome/Gurumin-Modding) which 
 - Right stick free camera as an option. The game isn't made with it in mind, can look weird in town
 - Higher Resolution Shadows
 - FXAA
-- Optional third person VR support at either life size or diorama scales
+- Optional third person stable VR support at either life size or diorama scales
 
 ## Install — copy into the game folder
 
@@ -47,11 +47,6 @@ WINEDLLOVERRIDES="d3d9=n,b" %command%
 The optional Linux installer can do this automatically. Close Steam while it
 updates that setting. If you already use other launch options, the installer
 preserves supported wrappers, arguments and other DLL overrides.
-
-Linux startup was tested with **GE-Proton10-34**. If Proton Experimental exits
-before the launcher appears, select GE-Proton10-34 in Steam → Properties →
-Compatibility. Install that compatibility tool first if it is not available.
-The installer sets launch options; it does not select or install Proton.
 
 If the separate PSP outfits mod is also installed, retain both overrides:
 
